@@ -15,7 +15,7 @@ namespace UNO
         // Overrides the base singleton so we don't
         // have to cast to this type everywhere.
         public static UnoNetworkManager Singleton => (UnoNetworkManager)singleton;
-        [SerializeField] private GameManager _gameManager;
+        public GameManager _gameManager;
 
         /// <summary>
         /// Runs on both Server and Client

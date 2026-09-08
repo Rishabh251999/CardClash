@@ -83,6 +83,13 @@ namespace UNO
         public string playerName;
     }
 
+    [Serializable]
+    public struct GameEndPlayerInfo
+    {
+        public string PlayerName;
+        public int PlayerScore;
+    }
+
     /// <summary>
     /// Operations the server can perform on rooms
     /// </summary>
@@ -120,7 +127,8 @@ namespace UNO
         UpdateRoom,
         ListUpdated,
         Started,
-        MatchEndedByOwner,
+        MatchEndedByOwner, 
+        MatchEndedByTimeout,
         Error
     }
 

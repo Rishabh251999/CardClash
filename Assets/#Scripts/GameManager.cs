@@ -616,6 +616,10 @@ namespace UNO
                     OnRoomLeft();
                     break;
 
+                case ClientRoomOperation.MatchEndedByTimeout:
+                    // TO DO...
+                    break;
+
                 case ClientRoomOperation.Error:
                     Debug.LogError($"Room error: {msg.errorMessage}");
                     break;

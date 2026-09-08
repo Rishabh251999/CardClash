@@ -2,6 +2,7 @@ using Mirror;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -36,6 +37,7 @@ namespace UNO
         [SerializeField] private Card _cardPrefab;
         [SerializeField] private GamePlayerGUI _playerGUIPrefab;
         [SerializeField] private NotificationView _notificationView;
+        [SerializeField] private UnoGameEndManager _gameEndManager;
 
         #endregion
 
@@ -63,6 +65,7 @@ namespace UNO
         [Space(2.5f)]
 
         [SerializeField] private TextMeshProUGUI _countdownText;
+        [SerializeField] private TextMeshProUGUI _gameTimerText;
         [SerializeField] private TextMeshProUGUI _drawPileCountText;
         [SerializeField] private TextMeshProUGUI _currentPlayerNameText;
 
@@ -106,6 +109,7 @@ namespace UNO
 
         [SerializeField] private int _cardPerPlayer;
         [SerializeField] private float _turnTimeLimit = 15f;
+        [SerializeField] private float _gameTimeLimit = 300f;
         [SerializeField] private float _playMoveDuration = 0.3f;
         [SerializeField] private float _countdownStepDuration = 1f;
 
@@ -134,13 +138,15 @@ namespace UNO
 
         private Action<CardColor> _onColorChosen;
 
-        private Coroutine _turnTimerCoroutine;
+        private Coroutine _turnTimerCoroutine; 
+        private Coroutine _gameTimerCoroutine;
         private Coroutine _notificationHideCoroutine;
 
         private int _turnIndex = 0;
         private int _turnDirection = 1;
 
         private bool _isTimerRunningLocally;
+        private bool _isGameRunningLocally;
         private bool _awaitingDrawnCardDecision;
 
         #endregion
@@ -165,6 +171,9 @@ namespace UNO
         [SyncVar(hook = nameof(OnTurnStartTimeChanged))]
         private double _turnStartTime;
 
+        [SyncVar(hook = nameof(OnGameStartTimeChanged))]
+        private double _gameStartTime;
+
         #endregion
 
 
@@ -182,6 +191,9 @@ namespace UNO
             if (_turnTimerCoroutine is { })
                 StopCoroutine(_turnTimerCoroutine);
 
+            if (_gameTimerCoroutine is { })
+                StopCoroutine(_gameTimerCoroutine);
+
             if (_notificationHideCoroutine is { })
                 StopCoroutine(_notificationHideCoroutine);
         }
@@ -191,16 +203,31 @@ namespace UNO
             if (!_isTimerRunningLocally || _turnTimerRingImage == null)
                 return;
 
-            var elapsed = NetworkTime.time - _turnStartTime;
+            var turnTimeElapsed = NetworkTime.time - _turnStartTime;
 
             var normalized = _turnTimeLimit > 0f
-                ? 1f - (float)(elapsed / _turnTimeLimit)
+                ? 1f - (float)(turnTimeElapsed / _turnTimeLimit)
                 : 0f;
 
             _turnTimerRingImage.fillAmount = Mathf.Clamp01(normalized);
 
             if (normalized <= 0f)
                 _isTimerRunningLocally = false;
+
+            if (_isGameRunningLocally && _gameTimerText != null)
+            {
+                var gameTimeElapsed = NetworkTime.time - _gameStartTime;
+
+                var remaining = Mathf.Max(0f, _gameTimeLimit - (float)gameTimeElapsed);
+
+                var minutes = Mathf.FloorToInt(remaining / 60f);
+                var seconds = Mathf.FloorToInt(remaining % 60f);
+
+                _gameTimerText.SetText($"{minutes:00}:{seconds:00}");
+
+                if (remaining <= 0f)
+                    _isGameRunningLocally = false;
+            }
         }
 
         #endregion
@@ -485,23 +512,24 @@ namespace UNO
                 _turnTimerCoroutine = null;
             }
 
+            if (_gameTimerCoroutine is { })
+            {
+                StopCoroutine(_gameTimerCoroutine);
+                _gameTimerCoroutine = null;
+            }
+
             foreach (var entry in _serverPlayers.Values)
             {
                 entry.Conn.Send(new ClientRoomMessage
                 {
-                    clientRoomOperation =
-                        ClientRoomOperation.MatchEndedByOwner,
+                    clientRoomOperation = ClientRoomOperation.MatchEndedByOwner,
 
-                    errorMessage =
-                        "The room owner has left. The match has ended."
+                    errorMessage = "The room owner has left. The match has ended."
                 });
 
                 if (entry.Conn.identity != null)
                 {
-                    NetworkServer.RemovePlayerForConnection(
-                        entry.Conn,
-                        RemovePlayerOptions.Destroy
-                    );
+                    NetworkServer.RemovePlayerForConnection(entry.Conn, RemovePlayerOptions.Destroy);
                 }
             }
 
@@ -536,24 +564,40 @@ namespace UNO
 
             DealCards(_cardPerPlayer);
 
-            float countdownDuration =
-                _countdownStepDuration * 4;
+            var countdownDuration = _countdownStepDuration * 4;
 
             const float dealStartDelay = 0.5f;
 
-            float dealAnimationDuration =
-                dealStartDelay +
-                (_cardPerPlayer - 1) * 0.12f +
-                _playMoveDuration;
+            var dealAnimationDuration = dealStartDelay + (_cardPerPlayer - 1) * 0.12f + _playMoveDuration;
 
-            float waitDuration = Mathf.Max(
-                countdownDuration,
-                dealAnimationDuration
-            );
+            var waitDuration = Mathf.Max(countdownDuration, dealAnimationDuration);
 
             yield return new WaitForSeconds(waitDuration);
 
+            StartGameTimer();
+
             SetNextTurn(_turnOrder[0]);
+        }
+
+        [Server]
+        private void StartGameTimer()
+        {
+            if (_gameTimerCoroutine is { })
+                StopCoroutine(_gameTimerCoroutine);
+
+            _gameStartTime = NetworkTime.time;
+
+            _gameTimerCoroutine = StartCoroutine(GameTimerRoutine());
+        }
+
+        [Server]
+        private IEnumerator GameTimerRoutine()
+        {
+            yield return new WaitForSeconds(_gameTimeLimit);
+
+            Debug.Log("[Server] Game time limit reached. Ending match.");
+
+            EndMatchByTimeout();
         }
 
         [Server]
@@ -720,75 +764,63 @@ namespace UNO
         #region Server - Card Play
 
         [Server]
-        public void HandlePlayerCard(
-            NetworkConnectionToClient conn,
-            UnoCard card,
-            CardColor chosenWildColor)
+        public void HandlePlayerCard(NetworkConnectionToClient conn, UnoCard card, CardColor chosenWildColor)
         {
             var netId = conn.identity.netId;
 
             if (!IsLegalPlay(card))
             {
-                Debug.LogWarning(
-                    $"[Server] Rejected illegal play " +
-                    $"from netId {netId}: {card}"
-                );
+                Debug.LogWarning($"[Server] Rejected illegal play " + $"from netId {netId}: {card}");
 
                 conn.Send(new ClientDeckMessage
                 {
-                    clientDeckOperation =
-                        ClientDeckOperation.Error,
+                    clientDeckOperation = ClientDeckOperation.Error,
 
-                    errorMessage =
-                        $"Illegal play: {card} does not match " +
-                        $"the current discard/stack requirement."
+                    errorMessage = $"Illegal play: {card} does not match " + $"the current discard/stack requirement."
                 });
 
                 return;
             }
 
-            if (card.Type is CardType.Wild
-                or CardType.WildDrawFour)
+            if (card.Type is CardType.Wild or CardType.WildDrawFour)
             {
-                if (chosenWildColor == CardColor.None)
+                if (chosenWildColor is CardColor.None)
                 {
-                    Debug.LogWarning(
-                        $"[Server] Rejected wild play " +
-                        $"from netId {netId}: no color chosen."
-                    );
+                    Debug.LogWarning($"[Server] Rejected wild play " + $"from netId {netId}: no color chosen.");
 
                     conn.Send(new ClientDeckMessage
                     {
-                        clientDeckOperation =
-                            ClientDeckOperation.Error,
+                        clientDeckOperation = ClientDeckOperation.Error,
 
-                        errorMessage =
-                            "You must choose a color " +
-                            "for the Wild card."
+                        errorMessage = "You must choose a color " + "for the Wild card."
                     });
 
                     return;
                 }
 
                 card.Color = chosenWildColor;
+
+                var chosenColorUnityColor = chosenWildColor switch
+                {
+                    CardColor.Red => (Color)_redColor,
+                    CardColor.Blue => (Color)_blueColor,
+                    CardColor.Green => (Color)_greenColor,
+                    CardColor.Yellow => (Color)_yellowColor,
+                    _ => Color.white
+                };
+
+                ShowNotification("Color changes to:", chosenWildColor.ToString(), chosenColorUnityColor); 
             }
 
             if (!TryRemoveFromHand(netId, card))
             {
-                Debug.LogWarning(
-                    $"[Server] Rejected play from netId " +
-                    $"{netId}: card {card} not found " +
-                    $"in tracked hand."
-                );
+                Debug.LogWarning($"[Server] Rejected play from netId " + $"${netId}: card {card} not found " + $"in tracked hand.");
 
                 conn.Send(new ClientDeckMessage
                 {
-                    clientDeckOperation =
-                        ClientDeckOperation.Error,
+                    clientDeckOperation = ClientDeckOperation.Error,
 
-                    errorMessage =
-                        $"Illegal play: {card} " +
-                        $"is not in your hand."
+                    errorMessage = $"Illegal play: {card} " + $"is not in your hand."
                 });
 
                 return;
@@ -796,10 +828,7 @@ namespace UNO
 
             _deck.Discard(card);
 
-            SetTopDiscard(
-                card,
-                _deck.DrawPileCount + 1
-            );
+            SetTopDiscard(card, _deck.DrawPileCount + 1);
 
             var data = _playerData[netId];
 
@@ -809,14 +838,20 @@ namespace UNO
 
             conn.Send(new ClientDeckMessage
             {
-                clientDeckOperation =
-                    ClientDeckOperation.CardPlayed,
+                clientDeckOperation = ClientDeckOperation.CardPlayed,
 
                 TopDiscardCard = card,
 
-                DrawPileCount =
-                    _deck.DrawPileCount
+                DrawPileCount = _deck.DrawPileCount
             });
+
+
+            if (data.cardCount <= 0)
+            {
+                HandlePlayerWin();
+                return;
+            }
+
 
             switch (card.Type)
             {
@@ -845,10 +880,7 @@ namespace UNO
 
                 case CardType.DrawTwo:
 
-                    ForcePlayerDraw(
-                        GetNextPlayerNetId(),
-                        2
-                    );
+                    ForcePlayerDraw(GetNextPlayerNetId(),2);
 
                     SkipNextPlayer();
 
@@ -859,10 +891,7 @@ namespace UNO
 
                 case CardType.WildDrawFour:
 
-                    ForcePlayerDraw(
-                        GetNextPlayerNetId(),
-                        4
-                    );
+                    ForcePlayerDraw(GetNextPlayerNetId(),4);
 
                     SkipNextPlayer();
 
@@ -886,9 +915,7 @@ namespace UNO
         }
 
         [Server]
-        private bool TryRemoveFromHand(
-            uint netId,
-            UnoCard card)
+        private bool TryRemoveFromHand(uint netId,UnoCard card)
         {
             if (!_serverHands.TryGetValue(
                     netId,
@@ -1083,6 +1110,7 @@ namespace UNO
 
         #endregion
 
+
         #region Server - Notification
 
         [Server]
@@ -1110,6 +1138,7 @@ namespace UNO
 
         #endregion
 
+
         #region Client - Notification
 
         [Client]
@@ -1117,6 +1146,108 @@ namespace UNO
 
         [ClientRpc]
         private void RpcHideNotification() => _notificationView.Hide();
+
+        #endregion
+
+
+        #region Server - Game End
+
+        [Server]
+        private IEnumerator HandlePlayerWin()
+        {
+            yield return new WaitForSeconds(0.75f);
+
+            if (_turnTimerCoroutine is { })
+            {
+                StopCoroutine(_turnTimerCoroutine);
+                _turnTimerCoroutine = null;
+            }
+
+            if (_gameTimerCoroutine is { })
+            {
+                StopCoroutine(_gameTimerCoroutine);
+                _gameTimerCoroutine = null;
+            }
+
+            var finalScores = CalculateFinalScores();   // <-- called here
+
+            RpcShowGameEndScreen(finalScores.ToArray());
+
+            _serverPlayers.Clear();
+            _serverHands.Clear();
+            _turnOrder.Clear();
+            _playerData.Clear();
+        }
+
+        [Server]
+        private void EndMatchByTimeout()
+        {
+            if (_turnTimerCoroutine is { })
+            {
+                StopCoroutine(_turnTimerCoroutine);
+                _turnTimerCoroutine = null;
+            }
+
+            _gameTimerCoroutine = null;
+
+            var finalScores = CalculateFinalScores();  
+
+            RpcShowGameEndScreen(finalScores.ToArray());
+
+            _serverPlayers.Clear();
+            _serverHands.Clear();
+            _turnOrder.Clear();
+            _playerData.Clear();
+        }
+
+        [Server]
+        private List<GameEndPlayerInfo> CalculateFinalScores()
+        {
+            List<GameEndPlayerInfo> finalScores = new();
+
+            var winnerScore = 0;
+
+            foreach(var i in _serverHands)
+            {
+                foreach(var j in i.Value)
+                {
+                    var points = j.Type switch
+                    {
+                        CardType.Number => 7,
+                        CardType.Skip => 20,
+                        CardType.Reverse => 20,
+                        CardType.DrawTwo => 20,
+                        CardType.Wild => 50,
+                        CardType.WildDrawFour => 50,
+                        _ => 0
+                    };
+
+                    winnerScore += points;
+                }
+
+                var playerName = _playerData.TryGetValue(i.Key, out var info) ? info.playerName : "Unknown";
+
+                finalScores.Add(new GameEndPlayerInfo
+                    {
+                        PlayerName = playerName,
+                        PlayerScore = winnerScore
+                    }
+                );
+            }
+
+            return finalScores;
+        }
+
+        #endregion
+
+
+        #region Client - Game End
+
+        [ClientRpc]
+        private void RpcShowGameEndScreen(GameEndPlayerInfo[] standings)
+        {
+            _gameEndManager.ShowGameEndScreen(standings);
+        }
 
         #endregion
 
@@ -1284,8 +1415,7 @@ namespace UNO
         }
 
         [Client]
-        private IEnumerator PlayCountdownStep(
-            string text)
+        private IEnumerator PlayCountdownStep(string text)
         {
             if (_countdownText == null)
                 yield break;
@@ -1295,43 +1425,26 @@ namespace UNO
 
             _countdownText.text = text;
 
-            var rect =
-                _countdownText.rectTransform;
+            var rect = _countdownText.rectTransform;
 
-            rect.localScale =
-                Vector3.one * startScale;
+            rect.localScale = Vector3.one * startScale;
 
-            float elapsed = 0f;
+            var elapsed = 0f;
 
-            while (elapsed <
-                   _countdownStepDuration)
+            while (elapsed <  _countdownStepDuration)
             {
-                elapsed +=
-                    Time.deltaTime;
+                elapsed += Time.deltaTime;
 
-                float t =
-                    Mathf.Clamp01(
-                        elapsed /
-                        _countdownStepDuration
-                    );
+                float t = Mathf.Clamp01(elapsed / _countdownStepDuration);
 
-                float scale =
-                    Mathf.Lerp(
-                        startScale,
-                        endScale,
-                        1f -
-                        (1f - t) *
-                        (1f - t)
-                    );
+                float scale = Mathf.Lerp(startScale, endScale, 1f - (1f - t) * (1f - t));
 
-                rect.localScale =
-                    Vector3.one * scale;
+                rect.localScale = Vector3.one * scale;
 
                 yield return null;
             }
 
-            rect.localScale =
-                Vector3.one * endScale;
+            rect.localScale = Vector3.one * endScale;
         }
 
         #endregion
@@ -1370,126 +1483,86 @@ namespace UNO
 
         #region Sync Callbacks
 
-        private void OnCurrentPlayerChanged(
-            uint oldNetId,
-            uint newNetId)
+        private void OnCurrentPlayerChanged(uint oldNetId, uint newNetId)
         {
-            _awaitingDrawnCardDecision =
-                false;
+            _awaitingDrawnCardDecision = false;
 
-            _passTurnButton
-                .gameObject
-                .SetActive(false);
+            _passTurnButton.gameObject.SetActive(false);
 
-            if (NetworkClient.localPlayer
-                is not { netId: var selfNetId })
+            if (NetworkClient.localPlayer is not { netId: var selfNetId })
             {
                 return;
             }
 
             if (newNetId == selfNetId)
             {
-                _currentPlayerNameText
-                    .SetText("you");
+                _currentPlayerNameText.SetText("you");
 
-                _canvasGroup.interactable =
-                    true;
+                _canvasGroup.interactable = true;
 
-                _canvasGroup.blocksRaycasts =
-                    true;
+                _canvasGroup.blocksRaycasts = true;
 
-                RefreshHandInteractability(
-                    true
-                );
+                RefreshHandInteractability(true);
             }
             else
             {
-                if (_playerData.TryGetValue(
-                        newNetId,
-                        out var currentPlayerInfo))
+                if (_playerData.TryGetValue(newNetId, out var currentPlayerInfo))
                 {
-                    _currentPlayerNameText
-                        .SetText(
-                            currentPlayerInfo
-                                .playerName
-                        );
+                    _currentPlayerNameText.SetText(currentPlayerInfo.playerName);
                 }
 
-                _canvasGroup.interactable =
-                    false;
+                _canvasGroup.interactable = false;
 
-                _canvasGroup.blocksRaycasts =
-                    true;
+                _canvasGroup.blocksRaycasts = true;
 
-                RefreshHandInteractability(
-                    false
-                );
+                RefreshHandInteractability(false);
             }
         }
 
-        private void OnTopDiscardChanged(
-            UnoCard oldCard,
-            UnoCard newCard)
+        private void OnTopDiscardChanged(UnoCard oldCard, UnoCard newCard)
         {
-            _syncedTopDiscard =
-                newCard;
+            _syncedTopDiscard = newCard;
 
-            var isWildCard =
-                newCard.Type
-                    is CardType.Wild
-                    or CardType.WildDrawFour;
+            var isWildCard = newCard.Type is CardType.Wild or CardType.WildDrawFour;
 
-            if (NetworkClient.localPlayer
-                    is { netId: var selfNetId }
-                && _currentPlayerNetId ==
-                selfNetId)
+            if (NetworkClient.localPlayer is { netId: var selfNetId } && _currentPlayerNetId == selfNetId)
             {
-                RefreshHandInteractability(
-                    true
-                );
+                RefreshHandInteractability(true);
             }
         }
 
-        private void OnTurnStartTimeChanged(
-            double oldValue,
-            double newValue)
+        private void OnTurnStartTimeChanged(double oldValue, double newValue)
         {
-            var isMyTurn =
-                NetworkClient.localPlayer
-                    is { netId: var selfNetId }
-                && _currentPlayerNetId ==
-                selfNetId;
+            var isMyTurn =NetworkClient.localPlayer is { netId: var selfNetId } && _currentPlayerNetId == selfNetId;
 
-            _isTimerRunningLocally =
-                isMyTurn;
+            _isTimerRunningLocally = isMyTurn;
 
             if (_turnTimerRingImage != null)
             {
-                _turnTimerRingImage
-                    .fillAmount = 1f;
+                _turnTimerRingImage.fillAmount = 1f;
             }
         }
 
-        private void OnPlayerDataChanged(
-            SyncIDictionary<uint, PlayerGameInfo>.Operation op,
-            uint netId,
-            PlayerGameInfo data)
+        private void OnGameStartTimeChanged(double oldValue, double newValue)
         {
-            if (!_netIdToGuiIndex.TryGetValue(
-                    netId,
-                    out int index))
+            _isGameRunningLocally = true;
+
+            var timer = $"{Mathf.FloorToInt(_gameTimeLimit / 60f):00}:" +
+                    $"{Mathf.FloorToInt(_gameTimeLimit % 60f):00}";
+
+            _gameTimerText.SetText($"{timer}");
+        }
+
+        private void OnPlayerDataChanged(SyncIDictionary<uint, PlayerGameInfo>.Operation op, uint netId, PlayerGameInfo data)
+        {
+            if (!_netIdToGuiIndex.TryGetValue(netId, out int index))
             {
                 return;
             }
 
-            if (_playerData.TryGetValue(
-                    netId,
-                    out var updatedData))
+            if (_playerData.TryGetValue(netId, out var updatedData))
             {
-                _playerGUIs[index]
-                    .UpdateCardCount(
-                        updatedData.cardCount
-                    );
+                _playerGUIs[index].UpdateCardCount(updatedData.cardCount);
             }
         }
 
