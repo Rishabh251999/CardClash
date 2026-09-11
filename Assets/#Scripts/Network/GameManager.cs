@@ -116,6 +116,15 @@ namespace CardClash
         [ServerCallback]
         internal IEnumerator OnServerDisconnect(NetworkConnectionToClient conn)
         {
+            if (playerInfos.TryGetValue(conn, out PlayerRoomInfo matchInfo) 
+                && matchControllers.TryGetValue(matchInfo.roomCode, out var matchController))
+            {
+                if (matchInfo.isOwner)
+                    EndMatchForRoom(matchController);
+                else
+                    matchController.HandlePlayerQuit(conn);
+            }
+
             // If player created a room, remove it
             if (playerRooms.TryGetValue(conn, out var roomCode))
             {

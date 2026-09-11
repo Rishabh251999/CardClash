@@ -709,8 +709,6 @@ namespace CardClash
             if (_currentPlayerNetId != netIdForThisTurn)
                 yield break;
 
-            Debug.Log($"[Turn] Time expired for netId {netIdForThisTurn}. Forcing pass.");
-
             ForcePlayerDraw(netIdForThisTurn, 1);
 
             if (_playerData.TryGetValue(netIdForThisTurn, out var data))

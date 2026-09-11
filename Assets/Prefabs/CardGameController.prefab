@@ -252,7 +252,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 998045692428391335}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5cc2e7764ec980d48a358463856127c7, type: 3}
+  m_Script: {fileID: 11500000, guid: 67d3158d6fe7e8f4fa1becb30750fc06, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UNO.UnoGameEndManager
   _playerGUI: {fileID: -518810362903912689, guid: e5386094766e57b46b02356287fbba9e, type: 3}
@@ -3178,7 +3178,7 @@ GameObject:
   - component: {fileID: 5108145172816027755}
   - component: {fileID: 6947650565823758401}
   m_Layer: 0
-  m_Name: UnoGameController
+  m_Name: CardGameController
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -3242,7 +3242,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 4818250737937721203}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9fc0fc04be8cd1f4396d209ee6a21742, type: 3}
+  m_Script: {fileID: 11500000, guid: 4e766436803fbf6478f72ba375d1f08d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UNO.UnoGameController
   syncDirection: 0
@@ -3274,12 +3274,12 @@ MonoBehaviour:
   _hand: {fileID: 6582705850152773721}
   _cardDrawGameobject: {fileID: 1741146029258031769}
   _cardTargetTransform: {fileID: 8923102032844777173}
-  _cardPerPlayer: 2
-  _turnTimeLimit: 10
-  _gameTimeLimit: 60
+  _cardPerPlayer: 0
+  _turnTimeLimit: 15
+  _gameTimeLimit: 300
   _playMoveDuration: 0.3
   _countdownStepDuration: 1
-  _notificationDisplayDuration: 3
+  _notificationDisplayDuration: 2
 --- !u!1 &5137279746705165134
 GameObject:
   m_ObjectHideFlags: 0

@@ -1,6 +1,4 @@
 using Mirror;
-using System;
-using UnityEngine;
 
 namespace CardClash
 {
@@ -13,20 +11,18 @@ namespace CardClash
             if (!isLocalPlayer)
                 return;
 
-            if (CardGameController.Instance is not { } instance)
-                return;
-
-            if (!instance.IsMyTurn())
+            if (!CardGameController.Instance.IsMyTurn())
                 return;
 
             if (card.CardData.Type is CardType.Wild or CardType.WildDrawFour)
             {
                 card.SetInteractable(false); // prevent double-clicks while choosing
-                instance.ShowColorPicker(chosenColor => SendPlay(card, instance, chosenColor));
+                CardGameController.Instance.ShowColorPicker(
+                    chosenColor => SendPlay(card, CardGameController.Instance, chosenColor));
                 return;
             }
 
-            SendPlay(card, instance, CardColor.None);
+            SendPlay(card, CardGameController.Instance, CardColor.None);
         }
 
         private void SendPlay(Card card, CardGameController instance, CardColor chosenColor)
