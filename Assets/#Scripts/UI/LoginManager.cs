@@ -7,6 +7,12 @@ namespace CardClash
 {
     public class LoginManager : MonoBehaviour
     {
+        #region Constants/Readonly 
+        private const int MinUserNameLength = 3;
+        private const int MaxUserNameLength = 16;
+
+        #endregion
+
         #region UI References
 
         [Header("UI References")]
@@ -22,13 +28,14 @@ namespace CardClash
 
         #endregion
 
-
         #region Unity Lifecycle
 
         private void Awake()
         {
             _enterButton.onClick.AddListener(OnEnterButtonClicked);
             _userNameInputField.onValueChanged.AddListener(OnUserNameChanged);
+
+            _userNameInputField.characterLimit = MaxUserNameLength;
         }
 
         private void OnDestroy()
@@ -39,7 +46,9 @@ namespace CardClash
 
         private void OnUserNameChanged(string userName)
         {
-            _enterButton.interactable = !string.IsNullOrWhiteSpace(userName);
+            var isValidLength = userName.Length >= MinUserNameLength && userName.Length <= MaxUserNameLength;
+
+            _enterButton.interactable = isValidLength && !string.IsNullOrWhiteSpace(userName);
         }
 
         private void OnEnterButtonClicked()

@@ -33,12 +33,20 @@ namespace CardClash
 
         #endregion
 
+        #region State
+
+        private IReadOnlyDictionary<Guid, RoomInfo> _openRooms;
+
+        #endregion
+
         #region Unity Lifecycle 
 
         private void Start()
         {
             _createButton.onClick.AddListener(RequestCreateRoom);
             _joinButton.onClick.AddListener(RequestJoinRoom);
+
+            _joinButton.interactable = false;
         }
 
         private void OnDestroy()
@@ -54,6 +62,8 @@ namespace CardClash
         [ClientCallback]
         public void UpdateRoomList(IReadOnlyDictionary<Guid, RoomInfo> openRooms)
         {
+            _openRooms = openRooms;
+
             // Clear existing room list UI
             foreach (Transform child in _matchList.transform)
                 Destroy(child.gameObject);
@@ -68,11 +78,14 @@ namespace CardClash
                 if (roomUIElement.TryGetComponent<Toggle>(out var toggle))
                 {
                     toggle.group = _toggleGroup;
+                    toggle.onValueChanged.AddListener(_ => UpdateJoinButtonState());
 
                     if (roomInfo.roomCode == _gameManager.selectedRoom)
                         toggle.isOn = true;
                 }
             }
+
+            UpdateJoinButtonState();
         }
 
         /// <summary>
@@ -101,6 +114,16 @@ namespace CardClash
                 serverRoomOperation = ServerRoomOperation.Join,
                 roomCode = _gameManager.selectedRoom
             });
+        }
+
+        [ClientCallback]
+        private void UpdateJoinButtonState()
+        {
+            var canJoin = _gameManager.selectedRoom != Guid.Empty && 
+                _openRooms != null && _openRooms.TryGetValue(_gameManager.selectedRoom, out var roomInfo)
+                && roomInfo.playerCount < roomInfo.maxPlayers;
+
+            _joinButton.interactable = canJoin;
         }
 
         #endregion

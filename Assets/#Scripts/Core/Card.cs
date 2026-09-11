@@ -115,8 +115,6 @@ namespace CardClash
             var wildFour = Load("WildDrawFour");
             for (int i = 0; i < 4; i++) CardSprites[id++] = wild;
             for (int i = 0; i < 4; i++) CardSprites[id++] = wildFour;
-
-            Debug.Log($"[CardView] Loaded {CardSprites.Count} sprites.");
         }
 
         private static Sprite Load(string name)

@@ -76,8 +76,6 @@ namespace CardClash
             var maxPlayers = int.Parse(_maxPlayers.options[_maxPlayers.value].text);
             var startingCards = int.Parse(_startingCards.options[_startingCards.value].text);
 
-            Debug.Log($"Creating room with max players: {maxPlayers}, starting cards: {startingCards}");
-
             NetworkClient.Send(new ServerRoomMessage
             {
                 serverRoomOperation = ServerRoomOperation.Create,

@@ -756,8 +756,6 @@ namespace CardClash
             _uiManager.SetState(ScreenType.Lobby);
 
             _lobbyManager.UpdateRoomList(openRooms);
-
-            Debug.Log("Left room");
         }
 
         #endregion
