@@ -6474,6 +6474,10 @@ MonoBehaviour:
   evaluationMethod: 0
   evaluationInterval: 3
   timeInterpolationGui: 0
+  clientLoadedScene: 0
+  <mode>k__BackingField: 0
+  finishStartHostPending: 0
+  clientSceneOperation: 0
   _uiManager: {fileID: 1703332058}
   _gameManager: {fileID: 445219986}
 --- !u!4 &1728180428

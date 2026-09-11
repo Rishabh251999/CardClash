@@ -4,7 +4,6 @@ using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
-using UnityEngine.Serialization;
 using UnityEngine.UI;
 
 namespace CardClash
@@ -53,7 +52,6 @@ namespace CardClash
         [SerializeField] private Button _resumeButton;
         [SerializeField] private Button _passTurnButton;
 
-        [FormerlySerializedAs("_unoButton")]
         [SerializeField] private Button _lastCardButton;
         [SerializeField] private Button _redColorButton;
         [SerializeField] private Button _blueColorButton;
