@@ -14,6 +14,9 @@ namespace UNO
     {
         public ServerRoomOperation serverRoomOperation;
         public Guid roomCode;
+
+        public int maxPlayers;
+        public int startingCards;
     }
 
     public struct ServerDeckMessage : NetworkMessage
@@ -31,9 +34,13 @@ namespace UNO
     {
         public ClientRoomOperation clientRoomOperation;
         public Guid roomCode;
+
+        public string errorMessage;
+
+        public int maxPlayers;
+
         public RoomInfo[] roomInfo;
         public PlayerRoomInfo[] playerInfo;
-        public string errorMessage;
     }
 
     public struct ClientDeckMessage : NetworkMessage
@@ -56,6 +63,7 @@ namespace UNO
         public Guid roomCode;
         public int playerCount;
         public int maxPlayers;
+        public int startingCards;
         public bool isStarted;
     }
 
@@ -77,6 +85,7 @@ namespace UNO
     public struct PlayerGameInfo
     {
         public bool isOwner;
+        public bool hasCalledUno;
 
         public int cardCount;
         public uint connectionId;
@@ -111,7 +120,8 @@ namespace UNO
         DrawCard = 1,  
         PlayCard = 2, 
         PassTurn = 3,
-        QuitMatch = 4,   // NEW
+        QuitMatch = 4,
+        CallUno = 5,
     }
 
     /// <summary>
@@ -143,6 +153,8 @@ namespace UNO
         Error = 6,
         StackedDraw = 7,
         PlayerQuit = 8,
+        UnoCalled = 9,   
+        UnoPenalty = 10,
     }
 
     #endregion
@@ -230,6 +242,35 @@ namespace UNO
             CardType.WildDrawFour => "WildDrawFour",
             _ => "Unknown"
         };
+    }
+
+    #endregion
+
+    #region struct
+
+    [Serializable]
+    public struct PanelEntry
+    {
+        public ScreenType ScreenType;
+        public CanvasGroup CanvasGroup;
+    }
+
+    public struct SetPlayerInfoMessage : NetworkMessage
+    {
+        public string Username;
+    }
+
+    #endregion
+
+    #region Enums
+
+    public enum ScreenType
+    {
+        Login,
+        Lobby,
+        Room,
+        RoomInfo,
+        Game,
     }
 
     #endregion

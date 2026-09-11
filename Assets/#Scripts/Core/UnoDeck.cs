@@ -6,12 +6,30 @@ namespace UNO
 {
     public class UnoDeck
     {
+        #region Runtime Collections
+
         private readonly List<UnoCard> _drawPile = new(108);
         private readonly List<UnoCard> _discardPile = new(108);
+
+        #endregion
+
+        #region Runtime State
 
         public int DrawPileCount => _drawPile.Count;
         public int DiscardPileCount => _discardPile.Count;
         public UnoCard? TopDiscard => _discardPile.Count > 0 ? _discardPile[^1] : null;
+
+        #endregion
+
+        #region Unity Lifecycle
+
+        private UnoCard Make(ref byte id, CardColor color, CardType type, byte faceValue) =>
+            new() { Id = id++, Color = color, Type = type, FaceValue = faceValue };
+
+        #endregion
+
+        #region Server Methods
+
 
         [Server]
         public void BuildDeck()
@@ -115,7 +133,6 @@ namespace UNO
             Debug.Log($"[UnoDeck] Reshuffled {_drawPile.Count} cards from discard into draw pile.");
         }
 
-        private UnoCard Make(ref byte id, CardColor color, CardType type, byte faceValue) =>
-            new(){ Id = id++, Color = color, Type = type, FaceValue = faceValue };
+        #endregion
     }
 }

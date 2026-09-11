@@ -11,18 +11,39 @@ namespace UNO
     [RequireComponent(typeof(LayoutElement))]
     public class Card : MonoBehaviour
     {
+        #region constants/readonly
+
         private readonly WaitForSeconds _waitForSeconds0_1 = new(0.1f);
+
+        #endregion
+
+        #region UI References
+
+        private Image _cardImage;
+
+        private Button _button;
+
+        private RectTransform _rectTransform;
+
+        private LayoutElement _layoutElement;
+
+        #endregion
+
+        #region Runtime Collections
+
+        public static readonly Dictionary<byte, Sprite> CardSprites = new();
+
+        #endregion
+
+        #region Runtime State
 
         public UnoCard CardData;
 
-        private Image _cardImage;
-        private Button _button;
-
         private Vector3 _dealTargetLocalPos;
-        private RectTransform _rectTransform;
-        private LayoutElement _layoutElement;
 
-        public static readonly Dictionary<byte, Sprite> CardSprites = new();
+        #endregion
+
+        #region Unity Methods
 
         private void Awake()
         {
@@ -46,8 +67,6 @@ namespace UNO
 
         private void OnCardClicked()
         {
-            Debug.Log($"[CardView] Card clicked: {CardData}");
-
             if (NetworkClient.localPlayer is not { } localPlayer ||
                 !localPlayer.TryGetComponent<UnoPlayerController>(out var playerController))
                 return;
@@ -188,5 +207,7 @@ namespace UNO
             _layoutElement.ignoreLayout = false;
             _button.interactable = true;
         }
+
+        #endregion
     }
 }

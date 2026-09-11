@@ -8,23 +8,52 @@ namespace UNO
 {
     public class RoomManager : MonoBehaviour
     {
+        #region Scripts
+
+        [Header("Script References")]
+
         [SerializeField] private PlayerGUI _playerPrefab;
+
+        #endregion
+
+        #region UI References
+
+        [Space(5)]
+        [Header("GUI References")]
+        [SerializeField] private TextMeshProUGUI _roomCodeText;
+        [SerializeField] private TextMeshProUGUI _playerCountText;
+
+        [Space(5)]
+
+        [SerializeField] private Button _readyButton;
+
+        private Button _startButton;
+        private Button _leaveButton;
+        private Button _cancelButton;
+
+        #endregion
+
+        #region GameObject References
+
+        [Space(5)]
+        [Header("GameObject References")]
 
         [SerializeField] private GameObject _playerList;
         [SerializeField] private GameObject _leaveGameObject;
         [SerializeField] private GameObject _cancelGameObject;
         [SerializeField] private GameObject _startButtonGameObject;
 
-        [SerializeField] private TextMeshProUGUI _roomCodeText;
-        
-        [SerializeField] private Button _readyButton;
-        private Button _startButton;
-        private Button _leaveButton;
-        private Button _cancelButton;
+        #endregion
 
-        [SerializeField] private bool _owner;
+        #region Runtime State
+
+        private bool _owner;
 
         private Guid _roomCode = Guid.Empty;
+
+        #endregion
+
+        #region Unity Lifecycle
 
         private void Awake()
         {
@@ -101,8 +130,12 @@ namespace UNO
             });
         }
 
+        #endregion
+
+        #region Client Methods
+
         [ClientCallback]
-        public void RefreshRoomPlayers(PlayerRoomInfo[] playerInfo)
+        public void RefreshRoomPlayers(PlayerRoomInfo[] playerInfo, int maxPlayers)
         {
             foreach (Transform child in _playerList.transform)
                 Destroy(child.gameObject);
@@ -120,7 +153,9 @@ namespace UNO
                 if (!player.isReady)
                     everyoneReady = false;
             }
-            _startButton.interactable = everyoneReady && _owner && (playerInfo.Length >= 1);
+            _startButton.interactable = everyoneReady && _owner;
+
+            _playerCountText.SetText($"{playerInfo.Length} / {maxPlayers}");
         }
 
         [ClientCallback]
@@ -128,7 +163,7 @@ namespace UNO
         {
             _roomCode = roomCode;
             var code = roomCode.ToString("N")[..6].ToUpper();
-            _roomCodeText.text = $"Room Code: {code}";
+            _roomCodeText.SetText($"Room: {code}");
         }
 
         [ClientCallback]
@@ -139,5 +174,7 @@ namespace UNO
             _leaveGameObject.SetActive(!owner);
             _startButton.gameObject.SetActive(owner);
         }
+
+        #endregion
     }
 }

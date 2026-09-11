@@ -1,3 +1,4 @@
+using JetBrains.Annotations;
 using Mirror;
 using System;
 using System.Collections;
@@ -56,8 +57,8 @@ namespace UNO
 
         [SerializeField] private LobbyManager _lobbyManager;
         [SerializeField] private RoomManager _roomManager;
+        [SerializeField] private UIManager _uiManager;
 
-        [SerializeField] private int maxPlayersPerRoom = 4;
         private int playerIndex = 1;
 
         [Header("GUI References")]
@@ -97,6 +98,7 @@ namespace UNO
             InitializeData();
             NetworkServer.RegisterHandler<ServerRoomMessage>(OnServerRoomMessage);
             NetworkServer.RegisterHandler<ServerDeckMessage>(OnServerDeckMessage);
+            NetworkServer.RegisterHandler<SetPlayerInfoMessage>(OnSetPlayerInfo);
         }
 
         [ServerCallback]
@@ -107,10 +109,7 @@ namespace UNO
             {
                 playerId = playerIndex,
                 isReady = false,
-                playerName = GenerateRandomPlayerName()
             });
-            playerIndex++;
-
             SendRoomList();
         }
 
@@ -184,6 +183,21 @@ namespace UNO
             ResetRoomManager();
         }
 
+        [ServerCallback]
+        private void OnSetPlayerInfo(NetworkConnectionToClient conn, SetPlayerInfoMessage msg)
+        {
+            var username = msg.Username?.Trim();
+
+            if (string.IsNullOrWhiteSpace(username))
+                username = conn.connectionId.ToString();
+
+            if (playerInfos.TryGetValue(conn, out var info))
+            {
+                info.playerName = username;
+                playerInfos[conn] = info;
+            }
+        }
+
         #endregion
 
         #region Client Callbacks
@@ -195,12 +209,20 @@ namespace UNO
 
             InitializeData();
 
-            UIManager.Instance.SetState(ScreenType.Lobby);
+            _uiManager.SetState(ScreenType.Lobby);
 
             _lobbyManager.UpdateRoomList(openRooms);
 
             NetworkClient.RegisterHandler<ClientRoomMessage>(OnClientRoomMessage);
             NetworkClient.RegisterHandler<ClientDeckMessage>(OnClientDeckMessage);
+        }
+
+        [ClientCallback]
+        internal void OnClientConnect()
+        {
+            var username = PlayerPrefs.GetString("UserName", string.Empty);
+
+            NetworkClient.Send(new SetPlayerInfoMessage { Username = username });
         }
 
         [ClientCallback]
@@ -225,7 +247,7 @@ namespace UNO
             switch (msg.serverRoomOperation)
             {
                 case ServerRoomOperation.Create:
-                    OnServerCreateRoom(conn);
+                    OnServerCreateRoom(conn, msg.maxPlayers, msg.startingCards);
                     break;
                 case ServerRoomOperation.Join:
                     OnServerJoinRoom(conn, msg.roomCode);
@@ -297,11 +319,15 @@ namespace UNO
                 case ServerDeckOperation.PassTurn:
                     controller.HandlePassTurn(conn); // Draw card first, then pass turn
                     break;
+
+                case ServerDeckOperation.CallUno:
+                    controller.HandleUnoCall(conn);
+                    break;
             }
         }
 
         [ServerCallback]
-        void OnServerCreateRoom(NetworkConnectionToClient conn)
+        void OnServerCreateRoom(NetworkConnectionToClient conn, int maxPlayers, int startingCards)
         {
             if (playerRooms.ContainsKey(conn)) return;
 
@@ -311,7 +337,8 @@ namespace UNO
             openRooms.Add(newRoomCode, new()
             {
                 roomCode = newRoomCode,
-                maxPlayers = maxPlayersPerRoom,
+                maxPlayers = maxPlayers,
+                startingCards = startingCards,
                 playerCount = 1,
                 isStarted = false
             });
@@ -330,7 +357,8 @@ namespace UNO
             {
                 clientRoomOperation = ClientRoomOperation.Created,
                 roomCode = newRoomCode,
-                playerInfo = info
+                playerInfo = info,
+                maxPlayers = maxPlayers
             });
 
             SendRoomList();
@@ -387,10 +415,9 @@ namespace UNO
                 playerConn.Send(new ClientRoomMessage
                 {
                     clientRoomOperation = ClientRoomOperation.UpdateRoom,
-                    playerInfo = info
+                    playerInfo = info,
+                    maxPlayers = roomInfo.maxPlayers
                 });
-
-            Debug.Log($"RoomManager: Player joined room {roomCode}");
         }
 
         [ServerCallback]
@@ -478,12 +505,15 @@ namespace UNO
             HashSet<NetworkConnectionToClient> connections = roomConnections[roomCode];
             var info = connections.Select(playerConn => playerInfos[playerConn]).ToArray();
 
+            var maxPlayers = openRooms[roomCode].maxPlayers;
+
             foreach (var item in roomConnections[roomCode])
             {
                 item.Send(new ClientRoomMessage
                 {
                     clientRoomOperation = ClientRoomOperation.UpdateRoom,
-                    playerInfo = info
+                    playerInfo = info,
+                    maxPlayers = maxPlayers
                 });
             }
         }
@@ -493,6 +523,8 @@ namespace UNO
         {
             if(!playerRooms.TryGetValue(conn, out var roomCode))
                 return;
+
+            var startingCards = openRooms.TryGetValue(roomCode, out var roomInfo) ? roomInfo.startingCards : 0;
 
             var matchController = Instantiate(matchControllerPrefab);
             if (matchController.TryGetComponent<NetworkMatch>(out var networkMatch))
@@ -523,12 +555,12 @@ namespace UNO
 
                 matchController.AddPlayer(playerConn, playerInfos[playerConn]);
 
-                PlayerRoomInfo playerInfo = playerInfos[playerConn];
+                var playerInfo = playerInfos[playerConn];
                 playerInfo.isReady = false;
                 playerInfos[playerConn] = playerInfo;
             }
 
-            matchController.StartGame(deck);
+            matchController.StartGame(deck, startingCards);
 
             playerRooms.Remove(conn);
             openRooms.Remove(roomCode);
@@ -578,7 +610,7 @@ namespace UNO
                 case ClientRoomOperation.Created:
                     OnRoomCreated(msg.roomCode);
 
-                    _roomManager.RefreshRoomPlayers(msg.playerInfo);
+                    _roomManager.RefreshRoomPlayers(msg.playerInfo, msg.maxPlayers);
                     _roomManager.SetRoomCode(msg.roomCode);
                     _roomManager.SetOwner(true);
                     break;
@@ -586,7 +618,7 @@ namespace UNO
                 case ClientRoomOperation.Joined:
                     OnRoomJoined(msg.roomCode);
 
-                    _roomManager.RefreshRoomPlayers(msg.playerInfo);
+                    _roomManager.RefreshRoomPlayers(msg.playerInfo, msg.maxPlayers);
                     _roomManager.SetRoomCode(msg.roomCode);
                     _roomManager.SetOwner(false);
                     break;
@@ -605,11 +637,11 @@ namespace UNO
                     break;
 
                 case ClientRoomOperation.UpdateRoom:
-                    _roomManager.RefreshRoomPlayers(msg.playerInfo);
+                    _roomManager.RefreshRoomPlayers(msg.playerInfo, msg.maxPlayers);
                     break;
 
                 case ClientRoomOperation.Started:
-                    UIManager.Instance.SetState(ScreenType.Game);
+                    _uiManager.SetState(ScreenType.Game);
                     break;
 
                 case ClientRoomOperation.MatchEndedByOwner:
@@ -695,7 +727,7 @@ namespace UNO
         public void OnRoomCreated(Guid roomId)
         {
             localPlayerRoom = roomId;
-            UIManager.Instance.SetState(ScreenType.Room);
+            _uiManager.SetState(ScreenType.Room);
         }
 
         [ClientCallback]
@@ -703,7 +735,7 @@ namespace UNO
         {
             localJoinedRoom = roomId;
             selectedRoom = Guid.Empty;
-            UIManager.Instance.SetState(ScreenType.Room);
+            _uiManager.SetState(ScreenType.Room);
         }
 
 
@@ -712,7 +744,7 @@ namespace UNO
             localPlayerRoom = Guid.Empty;
             localJoinedRoom = Guid.Empty;
 
-            UIManager.Instance.SetState(ScreenType.Lobby);
+            _uiManager.SetState(ScreenType.Lobby);
 
             _lobbyManager.UpdateRoomList(openRooms);
 
@@ -746,17 +778,6 @@ namespace UNO
                     });
                 }
             }
-        }
-
-        private string GenerateRandomPlayerName()
-        {
-            const string letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-            Span<char> buffer = stackalloc char[3];
-
-            for (int i = 0; i < buffer.Length; i++)
-                buffer[i] = letters[UnityEngine.Random.Range(0, letters.Length)];
-
-            return new string(buffer);
         }
 
         #endregion

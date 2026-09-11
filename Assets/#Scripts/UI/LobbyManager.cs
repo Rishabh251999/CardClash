@@ -8,15 +8,32 @@ namespace UNO
 {
     public class LobbyManager : MonoBehaviour
     {
+        #region Scripts
+
+        [SerializeField] private UIManager _uiManager;
         [SerializeField] private GameManager _gameManager;
         [SerializeField] private RoomGUI _roomPrefab;
 
+        #endregion
+
+        #region UI References
+
+        [Space(5f)]
+        [Header("UI References")]
+
         [SerializeField] private Button _createButton;
         [SerializeField] private Button _joinButton;
+
+        [Space(2.5f)]
+
         [SerializeField] private ToggleGroup _toggleGroup;
 
-        [SerializeField] private Transform _matchList;
+        [Space(2.5f)]
+        [SerializeField] private RectTransform _matchList;
 
+        #endregion
+
+        #region Unity Lifecycle 
 
         private void Start()
         {
@@ -29,6 +46,10 @@ namespace UNO
             _createButton.onClick.RemoveListener(RequestCreateRoom);
             _joinButton.onClick.RemoveListener(RequestJoinRoom);
         }
+
+        #endregion
+
+        #region Client Methods
 
         [ClientCallback]
         public void UpdateRoomList(IReadOnlyDictionary<Guid, RoomInfo> openRooms)
@@ -60,7 +81,7 @@ namespace UNO
         [ClientCallback]
         public void RequestCreateRoom()
         {
-            NetworkClient.Send(new ServerRoomMessage { serverRoomOperation = ServerRoomOperation.Create });
+            _uiManager.SetState(ScreenType.RoomInfo);
         }
 
         /// <summary>
@@ -81,5 +102,7 @@ namespace UNO
                 roomCode = _gameManager.selectedRoom
             });
         }
+
+        #endregion
     }
 }

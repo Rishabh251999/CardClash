@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using TMPro;
@@ -10,7 +9,7 @@ namespace UNO
     [RequireComponent(typeof(CanvasGroup))]
     public class UnoGameEndManager : MonoBehaviour
     {
-        #region Attributes
+        #region UI References
 
         [SerializeField] private GameEndPlayerGUI _playerGUI;
 
@@ -24,11 +23,15 @@ namespace UNO
 
         [SerializeField] private RectTransform _standingsListContainer;
 
+        #endregion
+
+        #region Runtime Collections
+
         private readonly List<GameEndPlayerGUI> _spawnedRows = new();
 
         #endregion
 
-        #region Methods
+        #region Unity Lifecycle
 
         private void Awake()
         {

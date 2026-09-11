@@ -2,7 +2,6 @@ using Mirror;
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -10,16 +9,17 @@ using UnityEngine.UI;
 namespace UNO
 {
     [RequireComponent(typeof(NetworkMatch))]
-    public class UnoGameController : NetworkBehaviour
+    public class UnoGameController : NetworkBehaviour, ICardEffectContext
     {
-        #region Constants / Colors
 
+        #region Constants / Colors
         private readonly Color32 _redColor = new(234, 50, 60, 255);
         private readonly Color32 _blueColor = new(0, 152, 220, 255);
         private readonly Color32 _yellowColor = new(255, 200, 37, 255);
         private readonly Color32 _greenColor = new(51, 152, 75, 255);
 
         private readonly WaitForSeconds _waitForSeconds0_12 = new(0.12f);
+        private readonly WaitForSeconds _waitForSeconds0_75 = new WaitForSeconds(0.75f);
 
         #endregion
 
@@ -52,6 +52,7 @@ namespace UNO
         [SerializeField] private Button _resumeButton;
         [SerializeField] private Button _passTurnButton;
 
+        [SerializeField] private Button _unoButton;
         [SerializeField] private Button _redColorButton;
         [SerializeField] private Button _blueColorButton;
         [SerializeField] private Button _greenColorButton;
@@ -69,8 +70,15 @@ namespace UNO
         [SerializeField] private TextMeshProUGUI _drawPileCountText;
         [SerializeField] private TextMeshProUGUI _currentPlayerNameText;
 
+        [Space(2.5f)]
+
+        [SerializeField] private CanvasGroup _pausePanel;
+        [SerializeField] private CanvasGroup _countdownPanel;
+        [SerializeField] private CanvasGroup _colorPickerPanel;
+
         private Button _cardDrawButton;
         private CanvasGroup _canvasGroup;
+        private CanvasGroup _passButtonCanvasGroup;
 
         #endregion
 
@@ -83,9 +91,6 @@ namespace UNO
         public GameObject _canvas;
 
         [SerializeField] private GameObject _hand;
-        [SerializeField] private GameObject _pausePanel;
-        [SerializeField] private GameObject _countdownPanel;
-        [SerializeField] private GameObject _colorPickerPanel;
         [SerializeField] private GameObject _cardDrawGameobject;
 
         #endregion
@@ -120,12 +125,9 @@ namespace UNO
 
         #region Runtime Collections
 
-        private readonly List<uint> _turnOrder = new();
         private readonly List<GamePlayerGUI> _playerGUIs = new();
 
         private readonly Dictionary<uint, int> _netIdToGuiIndex = new();
-        private readonly Dictionary<uint, PlayerEntry> _serverPlayers = new();
-        private readonly Dictionary<uint, List<UnoCard>> _serverHands = new();
 
         private readonly SyncDictionary<uint, PlayerGameInfo> _playerData = new();
 
@@ -136,14 +138,16 @@ namespace UNO
 
         private UnoDeck _deck;
 
+        private readonly UnoTurnStateMachine _turnState = new();
+        private readonly PlayerHandRegistry _playerRegistry = new();
+        private readonly CardEffectResolver _cardEffects = new();
+
         private Action<CardColor> _onColorChosen;
 
-        private Coroutine _turnTimerCoroutine; 
+        private Coroutine _countdownCoroutine;
         private Coroutine _gameTimerCoroutine;
+        private Coroutine _turnTimerCoroutine; 
         private Coroutine _notificationHideCoroutine;
-
-        private int _turnIndex = 0;
-        private int _turnDirection = 1;
 
         private bool _isTimerRunningLocally;
         private bool _isGameRunningLocally;
@@ -182,6 +186,13 @@ namespace UNO
         private void Awake()
         {
             _playerData.OnChange += OnPlayerDataChanged;
+
+            _canvasGroup = _canvas.GetComponent<CanvasGroup>();
+            _cardDrawButton = _cardDrawGameobject.GetComponent<Button>();
+            _handContainer = _hand.transform;
+            _passButtonCanvasGroup = _passTurnButton.GetComponent<CanvasGroup>();
+
+            _topDiscardImage.color = new(1, 1, 1, 0);
         }
 
         private void OnDestroy()
@@ -230,6 +241,16 @@ namespace UNO
             }
         }
 
+        private void SetCanvasGroupVisible(CanvasGroup group, bool visible)
+        {
+            if (group == null)
+                return;
+
+            group.alpha = visible ? 1f : 0f;
+            group.interactable = visible;
+            group.blocksRaycasts = visible;
+        }
+
         #endregion
 
 
@@ -239,42 +260,44 @@ namespace UNO
         {
             Instance = this;
 
-            _canvasGroup = _canvas.GetComponent<CanvasGroup>();
-            _cardDrawButton = _cardDrawGameobject.GetComponent<Button>();
-
-            _handContainer = _hand.transform;
-
             _canvasGroup.alpha = 1f;
             _canvasGroup.interactable = true;
             _canvasGroup.blocksRaycasts = true;
 
             _quitButton.onClick.AddListener(OnClickQuitButton);
 
-            _pauseButton.onClick.AddListener(
-                () => OpenAndClosePausePanel(true)
-            );
+            _pauseButton.onClick.AddListener(() => OpenAndClosePausePanel(true));
 
-            _resumeButton.onClick.AddListener(
-                () => OpenAndClosePausePanel(false)
-            );
+            _resumeButton.onClick.AddListener(() => OpenAndClosePausePanel(false));
 
             _cardDrawButton.onClick.AddListener(OnDrawButtonClicked);
             _passTurnButton.onClick.AddListener(OnPassButtonClicked);
+            _unoButton.onClick.AddListener(OnUnoButtonClicked);
 
-            _passTurnButton.gameObject.SetActive(false);
+            _passButtonCanvasGroup.alpha = 0f;
+            _passButtonCanvasGroup.interactable = false;
 
             _redColorButton.onClick.AddListener(OnRedColorClicked);
             _yellowColorButton.onClick.AddListener(OnYellowColorClicked);
             _greenColorButton.onClick.AddListener(OnGreenColorClicked);
             _blueColorButton.onClick.AddListener(OnBlueColorClicked);
 
-            _colorPickerPanel.SetActive(false);
+            SetCanvasGroupVisible(_pausePanel, false);
+            SetCanvasGroupVisible(_countdownPanel, false);
+            SetCanvasGroupVisible(_colorPickerPanel, false);
         }
 
         public override void OnStopClient()
         {
+            if (_countdownCoroutine != null)
+            {
+                StopCoroutine(_countdownCoroutine);
+                _countdownCoroutine = null;
+            }
+
             _cardDrawButton.onClick.RemoveListener(OnDrawButtonClicked);
             _passTurnButton.onClick.RemoveListener(OnPassButtonClicked);
+            _unoButton.onClick.RemoveListener(OnUnoButtonClicked);
 
             _redColorButton.onClick.RemoveListener(OnRedColorClicked);
             _yellowColorButton.onClick.RemoveListener(OnYellowColorClicked);
@@ -283,13 +306,9 @@ namespace UNO
 
             _quitButton.onClick.RemoveListener(OnClickQuitButton);
 
-            _pauseButton.onClick.RemoveListener(
-                () => OpenAndClosePausePanel(true)
-            );
+            _pauseButton.onClick.RemoveListener(() => OpenAndClosePausePanel(true));
 
-            _resumeButton.onClick.RemoveListener(
-                () => OpenAndClosePausePanel(false)
-            );
+            _resumeButton.onClick.RemoveListener(() => OpenAndClosePausePanel(false));
 
             Instance = null;
         }
@@ -309,7 +328,7 @@ namespace UNO
 
         private void OpenAndClosePausePanel(bool value)
         {
-            _pausePanel.SetActive(value);
+            SetCanvasGroupVisible(_pausePanel, value);
         }
 
         #endregion
@@ -337,13 +356,26 @@ namespace UNO
 
             _awaitingDrawnCardDecision = false;
 
-            _passTurnButton.gameObject.SetActive(false);
+            _passButtonCanvasGroup.alpha = 0f;
+            _passButtonCanvasGroup.interactable = false;
 
             RefreshHandInteractability(false);
 
             NetworkClient.Send(new ServerDeckMessage
             {
                 serverDeckOperation = ServerDeckOperation.PassTurn
+            });
+        }
+
+        [Client]
+        private void OnUnoButtonClicked()
+        {
+            if (!IsMyTurn())
+                return;
+
+            NetworkClient.Send(new ServerDeckMessage
+            {
+                serverDeckOperation = ServerDeckOperation.CallUno
             });
         }
 
@@ -357,7 +389,7 @@ namespace UNO
         {
             _onColorChosen = onColorChosen;
 
-            _colorPickerPanel.SetActive(true);
+            SetCanvasGroupVisible(_colorPickerPanel, true);
         }
 
         [Client]
@@ -387,7 +419,7 @@ namespace UNO
         [Client]
         private void HandleColorPicked(CardColor color)
         {
-            _colorPickerPanel.SetActive(false);
+            SetCanvasGroupVisible(_colorPickerPanel, false);
 
             var callback = _onColorChosen;
 
@@ -402,21 +434,17 @@ namespace UNO
         #region Server - Player Management
 
         [Server]
-        public void AddPlayer(
-            NetworkConnectionToClient conn,
-            PlayerRoomInfo info)
+        public void AddPlayer(NetworkConnectionToClient conn, PlayerRoomInfo info)
         {
             uint netId = conn.identity.netId;
 
-            _serverPlayers[netId] = new PlayerEntry
+            _playerRegistry.AddPlayer(netId, new PlayerEntry
             {
                 Conn = conn,
                 RoomInfo = info
-            };
+            });
 
-            _serverHands[netId] = new List<UnoCard>();
-
-            _turnOrder.Add(netId);
+            _turnState.AddPlayer(netId);
 
             _playerData[netId] = new PlayerGameInfo
             {
@@ -428,9 +456,7 @@ namespace UNO
         }
 
         [Server]
-        public void UpdatePlayerCardCount(
-            NetworkConnectionToClient conn,
-            int newCount)
+        public void UpdatePlayerCardCount(NetworkConnectionToClient conn, int newCount)
         {
             uint netId = conn.identity.netId;
 
@@ -448,23 +474,19 @@ namespace UNO
         {
             var netId = conn.identity.netId;
 
-            if (!_serverPlayers.TryGetValue(netId, out var quittingEntry))
+            if (!_playerRegistry.Players.ContainsKey(netId))
                 return;
 
-            var quittingPlayerName = quittingEntry.RoomInfo.playerName;
+            var quittingPlayerName = _playerRegistry.Players[netId].RoomInfo.playerName;
 
-            var wasCurrentPlayer = _currentPlayerNetId == netId;
+            var wasCurrentPlayer = _turnState.RemovePlayer(netId);
 
-            _serverPlayers.Remove(netId);
-            _serverHands.Remove(netId);
-            _turnOrder.Remove(netId);
+            _playerRegistry.RemovePlayer(netId);
             _playerData.Remove(netId);
 
-            if (wasCurrentPlayer && _turnOrder.Count > 0)
+            if (wasCurrentPlayer && _turnState.PlayerCount > 0)
             {
-                _turnIndex %= _turnOrder.Count;
-
-                _currentPlayerNetId = _turnOrder[_turnIndex];
+                _currentPlayerNetId = _turnState.CurrentPlayerNetId;
 
                 _turnStartTime = NetworkTime.time;
             }
@@ -478,27 +500,22 @@ namespace UNO
             // Remove their player object without disconnecting them.
             if (conn.identity != null)
             {
-                NetworkServer.RemovePlayerForConnection(
-                    conn,
-                    RemovePlayerOptions.Destroy
-                );
+                NetworkServer.RemovePlayerForConnection(conn, RemovePlayerOptions.Destroy);
             }
 
-            foreach (var entry in _serverPlayers.Values)
+            foreach (var entry in _playerRegistry.Players.Values)
             {
                 entry.Conn.Send(new ClientDeckMessage
                 {
-                    clientDeckOperation =
-                        ClientDeckOperation.PlayerQuit
+                    clientDeckOperation = ClientDeckOperation.PlayerQuit
                 });
             }
 
             ShowNotification("Player left", quittingPlayerName, Color.black);
 
-            if (_turnOrder.Count <= 1)
+            if (_turnState.PlayerCount <= 1)
             {
-                // TODO:
-                // End match / declare remaining player winner.
+                //TO DO...
             }
         }
 
@@ -518,7 +535,7 @@ namespace UNO
                 _gameTimerCoroutine = null;
             }
 
-            foreach (var entry in _serverPlayers.Values)
+            foreach (var entry in _playerRegistry.Players.Values)
             {
                 entry.Conn.Send(new ClientRoomMessage
                 {
@@ -533,9 +550,8 @@ namespace UNO
                 }
             }
 
-            _serverPlayers.Clear();
-            _serverHands.Clear();
-            _turnOrder.Clear();
+            _playerRegistry.Clear();
+            _turnState.Clear();
             _playerData.Clear();
         }
 
@@ -545,9 +561,11 @@ namespace UNO
         #region Server - Game Setup
 
         [Server]
-        public void StartGame(UnoDeck deck)
+        public void StartGame(UnoDeck deck, int cardsPerPlayer)
         {
             _deck = deck;
+
+            _cardPerPlayer = cardsPerPlayer;
 
             FlipFirstCard();
 
@@ -576,7 +594,7 @@ namespace UNO
 
             StartGameTimer();
 
-            SetNextTurn(_turnOrder[0]);
+            SetNextTurn(_turnState.TurnOrder[0]);
         }
 
         [Server]
@@ -603,13 +621,13 @@ namespace UNO
         [Server]
         private void DealCards(int count)
         {
-            foreach (var (netId, entry) in _serverPlayers)
+            foreach (var (netId, entry) in _playerRegistry.Players)
             {
                 List<UnoCard> hand = new();
 
                 _deck.DrawMultiple(count, hand);
 
-                _serverHands[netId].AddRange(hand);
+                _playerRegistry.AddCardsToHand(netId, hand);
 
                 var data = _playerData[netId];
 
@@ -654,10 +672,7 @@ namespace UNO
 
             _deck.Discard(firstCard);
 
-            SetTopDiscard(
-                firstCard,
-                _deck.DrawPileCount + 1
-            );
+            SetTopDiscard(firstCard, _deck.DrawPileCount + 1);
         }
 
         #endregion
@@ -683,27 +698,23 @@ namespace UNO
 
             _turnStartTime = NetworkTime.time;
 
-            _turnTimerCoroutine =
-                StartCoroutine(
-                    TurnTimerRoutine(_currentPlayerNetId)
-                );
+            _turnTimerCoroutine = StartCoroutine(TurnTimerRoutine(_currentPlayerNetId));
         }
 
         [Server]
-        private IEnumerator TurnTimerRoutine(
-            uint netIdForThisTurn)
+        private IEnumerator TurnTimerRoutine(uint netIdForThisTurn)
         {
-            yield return new WaitForSeconds(
-                _turnTimeLimit
-            );
+            yield return new WaitForSeconds(_turnTimeLimit );
 
             if (_currentPlayerNetId != netIdForThisTurn)
                 yield break;
 
-            Debug.Log(
-                $"[Turn] Time expired for netId " +
-                $"{netIdForThisTurn}. Forcing pass."
-            );
+            Debug.Log($"[Turn] Time expired for netId {netIdForThisTurn}. Forcing pass.");
+
+            ForcePlayerDraw(netIdForThisTurn, 1);
+
+            if (_playerData.TryGetValue(netIdForThisTurn, out var data))
+                ShowNotification("Time's up!", $"{data.playerName} drew a card", Color.black);
 
             AdvanceTurn();
         }
@@ -711,52 +722,47 @@ namespace UNO
         [Server]
         public void AdvanceTurn()
         {
-            _turnIndex =
-                (_turnIndex +
-                 _turnDirection +
-                 _turnOrder.Count)
-                % _turnOrder.Count;
+            _turnState.AdvanceTurn();
 
-            SetNextTurn(
-                _turnOrder[_turnIndex]
-            );
+            SetNextTurn(_turnState.CurrentPlayerNetId);
         }
 
         [Server]
         public void ReverseTurnDirection()
         {
-            _turnDirection *= -1;
+            _turnState.ReverseDirection();
         }
 
         [Server]
         public void SkipNextPlayer()
         {
-            _turnIndex =
-                (_turnIndex +
-                 _turnDirection +
-                 _turnOrder.Count)
-                % _turnOrder.Count;
+            _turnState.SkipNextPlayer();
         }
 
         [Server]
-        public bool IsCurrentPlayer(
-            NetworkConnectionToClient conn)
+        public bool IsCurrentPlayer(NetworkConnectionToClient conn)
         {
-            return conn.identity.netId ==
-                   _currentPlayerNetId;
+            return conn.identity.netId == _currentPlayerNetId;
         }
 
         [Server]
         private uint GetNextPlayerNetId()
         {
-            int nextIndex =
-                (_turnIndex +
-                 _turnDirection +
-                 _turnOrder.Count)
-                % _turnOrder.Count;
-
-            return _turnOrder[nextIndex];
+            return _turnState.GetNextPlayerNetId();
         }
+
+
+        int ICardEffectContext.PlayerCount => _turnState.PlayerCount;
+
+        void ICardEffectContext.ReverseTurnDirection() => ReverseTurnDirection();
+
+        void ICardEffectContext.SkipNextPlayer() => SkipNextPlayer();
+
+        void ICardEffectContext.AdvanceTurn() => AdvanceTurn();
+
+        uint ICardEffectContext.GetNextPlayerNetId() => GetNextPlayerNetId();
+
+        void ICardEffectContext.ForcePlayerDraw(uint targetNetId, int count) => ForcePlayerDraw(targetNetId, count);
 
         #endregion
 
@@ -834,6 +840,15 @@ namespace UNO
 
             data.cardCount -= 1;
 
+            var wasDrawnCard = _playerRegistry.WasLastDrawnCard(netId, card.Id);
+
+            _playerRegistry.ClearLastDrawnCardId(netId);
+
+            if (wasDrawnCard && data.cardCount == 1)
+            {
+                data.hasCalledUno = true;
+            }
+
             _playerData[netId] = data;
 
             conn.Send(new ClientDeckMessage
@@ -848,64 +863,25 @@ namespace UNO
 
             if (data.cardCount <= 0)
             {
-                HandlePlayerWin();
+                StartCoroutine(HandlePlayerWin());
                 return;
             }
 
-
-            switch (card.Type)
+            if (data.cardCount == 1)
             {
-                case CardType.Reverse:
+                if (!data.hasCalledUno)
+                {
+                    PenalizeMissedUnoCall(netId);
+                }
 
-                    ReverseTurnDirection();
-
-                    if (_turnOrder.Count == 2)
-                    {
-                        SkipNextPlayer();
-                    }
-
-                    AdvanceTurn();
-
-                    break;
-
-
-                case CardType.Skip:
-
-                    SkipNextPlayer();
-
-                    AdvanceTurn();
-
-                    break;
-
-
-                case CardType.DrawTwo:
-
-                    ForcePlayerDraw(GetNextPlayerNetId(),2);
-
-                    SkipNextPlayer();
-
-                    AdvanceTurn();
-
-                    break;
-
-
-                case CardType.WildDrawFour:
-
-                    ForcePlayerDraw(GetNextPlayerNetId(),4);
-
-                    SkipNextPlayer();
-
-                    AdvanceTurn();
-
-                    break;
-
-
-                default:
-
-                    AdvanceTurn();
-
-                    break;
+                else if (wasDrawnCard)
+                {
+                    ShowNotification("UNO!", data.playerName, Color.red);
+                }
             }
+
+
+            _cardEffects.Resolve(card.Type).Apply(this);
         }
 
         [Server]
@@ -917,29 +893,11 @@ namespace UNO
         [Server]
         private bool TryRemoveFromHand(uint netId,UnoCard card)
         {
-            if (!_serverHands.TryGetValue(
-                    netId,
-                    out var hand))
-            {
-                return false;
-            }
-
-            int index =
-                hand.FindIndex(
-                    c => c.Id == card.Id
-                );
-
-            if (index < 0)
-                return false;
-
-            hand.RemoveAt(index);
-
-            return true;
+            return _playerRegistry.TryRemoveCard(netId, card);
         }
 
         [Server]
-        private bool IsPlayableAgainstTop(
-            UnoCard card)
+        private bool IsPlayableAgainstTop(UnoCard card)
         {
             if (_deck.TopDiscard is not { } topCard)
                 return true;
@@ -966,9 +924,7 @@ namespace UNO
         }
 
         [Server]
-        private void SetTopDiscard(
-            UnoCard card,
-            int drawCount)
+        private void SetTopDiscard(UnoCard card, int drawCount)
         {
             _syncedTopDiscard = card;
 
@@ -978,56 +934,110 @@ namespace UNO
             );
         }
 
+        [Server]
+        public void HandleUnoCall(NetworkConnectionToClient conn)
+        {
+            var netId = conn.identity.netId;
+
+            if (!_playerData.TryGetValue(netId, out var data))
+                return;
+
+            if (_playerRegistry.GetHandCount(netId) > 2)
+            {
+                conn.Send(new ClientDeckMessage
+                {
+                    clientDeckOperation = ClientDeckOperation.Error,
+
+                    errorMessage = "You can only call UNO when you have 2 cards or fewer."
+                });
+
+                return;
+            }
+
+            if (data.hasCalledUno)
+                return;
+
+            data.hasCalledUno = true;
+
+            _playerData[netId] = data;
+
+            foreach (var entry in _playerRegistry.Players.Values)
+            {
+                entry.Conn.Send(new ClientDeckMessage
+                {
+                    clientDeckOperation = ClientDeckOperation.UnoCalled
+                });
+            }
+
+            ShowNotification("UNO!", data.playerName, Color.red);
+        }
+
+        [Server]
+        private void ResetUnoCall(uint netId)
+        {
+            if (!_playerData.TryGetValue(netId, out var data))
+                return;
+
+            if (!data.hasCalledUno)
+                return;
+
+            data.hasCalledUno = false;
+
+            _playerData[netId] = data;
+        }
+
+        [Server]
+        private void PenalizeMissedUnoCall(uint netId)
+        {
+            Debug.Log($"[Server] netId {netId} failed to call UNO. Applying penalty draw.");
+
+            ForcePlayerDraw(netId, 1);
+
+            ResetUnoCall(netId);
+
+            if (_playerData.TryGetValue(netId, out var data))
+            {
+                ShowNotification("Missed UNO!", $"{data.playerName} drew 1 card", Color.black);
+            }
+        }
+
         #endregion
 
 
         #region Server - Card Drawing
 
         [Server]
-        private void ForcePlayerDraw(
-            uint targetNetId,
-            int count)
+        private void ForcePlayerDraw(uint targetNetId, int count)
         {
-            if (!_serverPlayers.TryGetValue(
-                    targetNetId,
-                    out var entry))
+            if (!_playerRegistry.Players.TryGetValue(targetNetId, out var entry))
             {
-                Debug.LogWarning(
-                    $"[Server] ForcePlayerDraw: " +
-                    $"no connection found for " +
-                    $"netId {targetNetId}."
-                );
+                Debug.LogWarning($"[Server] ForcePlayerDraw: no connection found for netId {targetNetId}.");
 
                 return;
             }
 
             var drawn = new List<UnoCard>();
 
-            _deck.DrawMultiple(
-                count,
-                drawn
-            );
+            _deck.DrawMultiple(count, drawn);
 
-            _serverHands[targetNetId]
-                .AddRange(drawn);
+            _playerRegistry.AddCardsToHand(targetNetId, drawn);
 
-            var data =
-                _playerData[targetNetId];
+            var data = _playerData[targetNetId];
 
             data.cardCount += drawn.Count;
 
+            if (data.cardCount != 1)
+                ResetUnoCall(targetNetId);
+
             _playerData[targetNetId] = data;
 
-            entry.Conn.Send(
-                new ClientDeckMessage
-                {
-                    clientDeckOperation =
-                        ClientDeckOperation.CardDrawn,
+            entry.Conn.Send(new ClientDeckMessage
+            {
+                    clientDeckOperation = ClientDeckOperation.CardDrawn,
 
                     Cards = drawn.ToArray(),
 
-                    DrawPileCount =
-                        _deck.DrawPileCount,
+                    DrawPileCount = _deck.DrawPileCount,
 
                     CanPlayDrawnCard = false
                 }
@@ -1035,75 +1045,67 @@ namespace UNO
         }
 
         [Server]
-        public void HandleDrawCard(
-            NetworkConnectionToClient conn)
+        public void HandleDrawCard(NetworkConnectionToClient conn)
         {
-            var netId =
-                conn.identity.netId;
+            var netId = conn.identity.netId;
 
-            if (!_deck.TryDraw(
-                    out UnoCard drawnCard))
+            if (!_deck.TryDraw(out UnoCard drawnCard))
             {
-                Debug.LogWarning(
-                    "[Server] Draw pile empty."
-                );
+                Debug.LogWarning("[Server] Draw pile empty.");
 
                 return;
             }
 
-            _serverHands[netId]
-                .Add(drawnCard);
+            _playerRegistry.AddCardsToHand(netId, new[] { drawnCard });
 
-            var data =
-                _playerData[netId];
+            var data = _playerData[netId];
 
             data.cardCount++;
 
             _playerData[netId] = data;
 
-            var canPlay =
-                IsPlayableAgainstTop(
-                    drawnCard
-                );
+            if (data.cardCount != 1)
+                ResetUnoCall(netId);
 
-            conn.Send(
-                new ClientDeckMessage
-                {
-                    clientDeckOperation =
-                        ClientDeckOperation.CardDrawn,
+            var canPlay = IsPlayableAgainstTop(drawnCard);
 
-                    Cards =
-                        new[] { drawnCard },
-
-                    DrawPileCount =
-                        _deck.DrawPileCount,
-
-                    CanPlayDrawnCard =
-                        canPlay
-                }
-            );
-
-            if (!canPlay)
+            conn.Send(new ClientDeckMessage
             {
+                    clientDeckOperation = ClientDeckOperation.CardDrawn,
+
+                    Cards = new[] { drawnCard },
+
+                    DrawPileCount =  _deck.DrawPileCount,
+
+                    CanPlayDrawnCard = canPlay
+            });
+
+            if (canPlay)
+            {
+                _playerRegistry.SetLastDrawnCardId(netId, drawnCard.Id);
+            }
+
+            else
+            {
+                _playerRegistry.ClearLastDrawnCardId(netId);
+
                 AdvanceTurn();
             }
 
-            Debug.Log(
-                $"[Server] {data} drew a card. " +
-                $"Hand size: {data.cardCount}"
-            );
+            Debug.Log($"[Server] {data} drew a card. Hand size: {data.cardCount}");
         }
 
         [Server]
-        public void HandlePassTurn(
-            NetworkConnectionToClient conn)
+        public void HandlePassTurn(NetworkConnectionToClient conn)
         {
             if (!IsCurrentPlayer(conn))
                 return;
 
-            Debug.Log(
-                "[Server] Player passed after drawing."
-            );
+            var netId = conn.identity.netId;
+
+            _playerRegistry.ClearLastDrawnCardId(netId);
+
+            Debug.Log("[Server] Player passed after drawing.");
 
             AdvanceTurn();
         }
@@ -1141,7 +1143,7 @@ namespace UNO
 
         #region Client - Notification
 
-        [Client]
+        [ClientRpc]
         private void RpcShowNotification(string text1, string text2, Color color) => _notificationView.Show(text1, text2, color);
 
         [ClientRpc]
@@ -1155,7 +1157,7 @@ namespace UNO
         [Server]
         private IEnumerator HandlePlayerWin()
         {
-            yield return new WaitForSeconds(0.75f);
+            yield return _waitForSeconds0_75;
 
             if (_turnTimerCoroutine is { })
             {
@@ -1173,9 +1175,8 @@ namespace UNO
 
             RpcShowGameEndScreen(finalScores.ToArray());
 
-            _serverPlayers.Clear();
-            _serverHands.Clear();
-            _turnOrder.Clear();
+            _playerRegistry.Clear();
+            _turnState.Clear();
             _playerData.Clear();
         }
 
@@ -1194,9 +1195,8 @@ namespace UNO
 
             RpcShowGameEndScreen(finalScores.ToArray());
 
-            _serverPlayers.Clear();
-            _serverHands.Clear();
-            _turnOrder.Clear();
+            _playerRegistry.Clear();
+            _turnState.Clear();
             _playerData.Clear();
         }
 
@@ -1205,11 +1205,11 @@ namespace UNO
         {
             List<GameEndPlayerInfo> finalScores = new();
 
-            var winnerScore = 0;
-
-            foreach(var i in _serverHands)
+            foreach(var i in _playerRegistry.AllHands)
             {
-                foreach(var j in i.Value)
+                var winnerScore = 0;
+
+                foreach (var j in i.Value)
                 {
                     var points = j.Type switch
                     {
@@ -1338,12 +1338,10 @@ namespace UNO
                 return;
             }
 
-            _awaitingDrawnCardDecision =
-                true;
+            _awaitingDrawnCardDecision = true;
 
-            _passTurnButton
-                .gameObject
-                .SetActive(true);
+            _passButtonCanvasGroup.alpha = 1f;
+            _passButtonCanvasGroup.interactable = true;
 
             foreach (Transform item
                      in _handContainer)
@@ -1378,19 +1376,19 @@ namespace UNO
         [ClientRpc]
         private void RpcPlayStartCountdown()
         {
-            StartCoroutine(
-                StartCountdownRoutine()
-            );
+            if (_countdownCoroutine != null)
+            {
+                StopCoroutine(_countdownCoroutine);
+                _countdownCoroutine = null;
+            }
+
+            _countdownCoroutine = StartCoroutine(StartCountdownRoutine());
         }
 
         [Client]
         private IEnumerator StartCountdownRoutine()
         {
-            if (_countdownPanel != null)
-            {
-                _countdownPanel
-                    .SetActive(true);
-            }
+            SetCanvasGroupVisible(_countdownPanel, true);
 
             string[] steps =
             {
@@ -1402,16 +1400,12 @@ namespace UNO
 
             foreach (var step in steps)
             {
-                yield return StartCoroutine(
-                    PlayCountdownStep(step)
-                );
+                yield return StartCoroutine(PlayCountdownStep(step));
             }
 
-            if (_countdownPanel != null)
-            {
-                _countdownPanel
-                    .SetActive(false);
-            }
+            SetCanvasGroupVisible(_countdownPanel, false);
+
+            _countdownCoroutine = null;
         }
 
         [Client]
@@ -1453,29 +1447,18 @@ namespace UNO
         #region Client RPC - Card State
 
         [ClientRpc]
-        private void RpcShowTopDiscard(
-            UnoCard card,
-            int drawCount)
+        private void RpcShowTopDiscard(UnoCard card, int drawCount)
         {
             _syncedTopDiscard = card;
 
-            if (Card.CardSprites.TryGetValue(
-                    card.Id,
-                    out var sprite))
+            if (Card.CardSprites.TryGetValue(card.Id, out var sprite))
             {
-                _topDiscardImage.color =
-                    new Color(1f, 1f, 1f, 1f);
+                _topDiscardImage.color = new Color(1f, 1f, 1f, 1f);
 
-                _topDiscardImage.sprite =
-                    sprite;
+                _topDiscardImage.sprite = sprite;
             }
 
-            var isWildCard =
-                card.Type is CardType.Wild
-                or CardType.WildDrawFour;
-
-            _drawPileCountText.text =
-                $"{drawCount} left";
+            _drawPileCountText.text = $"{drawCount} left";
         }
 
         #endregion
@@ -1487,7 +1470,8 @@ namespace UNO
         {
             _awaitingDrawnCardDecision = false;
 
-            _passTurnButton.gameObject.SetActive(false);
+            _passButtonCanvasGroup.alpha = 0f;
+            _passButtonCanvasGroup.interactable = false;
 
             if (NetworkClient.localPlayer is not { netId: var selfNetId })
             {

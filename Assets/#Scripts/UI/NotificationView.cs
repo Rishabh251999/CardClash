@@ -6,9 +6,17 @@ namespace UNO
     [RequireComponent(typeof(CanvasGroup))]
     public class NotificationView : MonoBehaviour
     {
+        #region UI References
+
+        [Header("UI References")]
+
         [SerializeField] private TextMeshProUGUI _notificationText1;
         [SerializeField] private TextMeshProUGUI _notificationText2;
         private CanvasGroup _canvasGroup;
+
+        #endregion
+
+        #region Unity Lifecycle
 
         private void Awake()
         {
@@ -41,5 +49,7 @@ namespace UNO
             _canvasGroup.interactable = visible;
             _canvasGroup.blocksRaycasts = visible;
         }
+
+        #endregion
     }
 }

@@ -33,11 +33,11 @@
   <Project Path="UnityEditor.TestRunner.csproj" />
   <Project Path="Unity.VisualScripting.Core.csproj" />
   <Project Path="Unity.RenderPipelines.Universal.Runtime.csproj" />
-  <Project Path="Assembly-CSharp.csproj" />
   <Project Path="Unity.UnifiedRayTracing.Runtime.csproj" />
   <Project Path="Mirror.Examples.csproj" />
   <Project Path="Unity.VisualScripting.State.Editor.csproj" />
   <Project Path="Unity.Burst.CodeGen.csproj" />
+  <Project Path="Assembly-CSharp.csproj" />
   <Project Path="Unity.VisualScripting.Flow.csproj" />
   <Project Path="kcp2k.csproj" />
   <Project Path="Unity.PerformanceTesting.csproj" />
@@ -53,6 +53,7 @@
   <Project Path="Unity.2D.Common.Editor.csproj" />
   <Project Path="Mirror.csproj" />
   <Project Path="ScriptablePacker.csproj" />
+  <Project Path="Unity.Mobile.AndroidLogcat.Editor.csproj" />
   <Project Path="Unity.Rider.Editor.csproj" />
   <Project Path="Unity.2D.Tooling.Editor.csproj" />
   <Project Path="Unity.VisualScripting.State.csproj" />

@@ -1,13 +1,13 @@
 fileFormatVersion: 2
-guid: 9a2f24056bdfd0042b52302ec5595bda
+guid: 89e9ec8c54303334d8962cd2f32166cf
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: -8222406987496834216
-    second: crown_0
+      213: 6840553576603417927
+    second: crown (1)_0
   - first:
-      213: -6156647272689741206
-    second: crown_1
+      213: -8077875313194505719
+    second: crown (1)_1
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -116,13 +116,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: crown_0
+      name: crown (1)_0
       rect:
         serializedVersion: 2
-        x: 14
-        y: 153
-        width: 484
-        height: 264
+        x: 15
+        y: 175
+        width: 482
+        height: 267
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -131,20 +131,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 85bbf87b86424ed80800000000000000
-      internalID: -8222406987496834216
+      spriteID: 74d79703c378eee50800000000000000
+      internalID: 6840553576603417927
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: crown_1
+      name: crown (1)_1
       rect:
         serializedVersion: 2
-        x: 69
-        y: 95
-        width: 374
-        height: 46
+        x: 44
+        y: 70
+        width: 424
+        height: 73
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -153,8 +153,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: a6253ffbce13f8aa0800000000000000
-      internalID: -6156647272689741206
+      spriteID: 90ae429733f95ef80800000000000000
+      internalID: -8077875313194505719
       vertices: []
       indices: 
       edges: []
@@ -173,8 +173,8 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      crown_0: -8222406987496834216
-      crown_1: -6156647272689741206
+      crown (1)_0: 6840553576603417927
+      crown (1)_1: -8077875313194505719
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

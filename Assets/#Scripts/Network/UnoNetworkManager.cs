@@ -15,6 +15,9 @@ namespace UNO
         // Overrides the base singleton so we don't
         // have to cast to this type everywhere.
         public static UnoNetworkManager Singleton => (UnoNetworkManager)singleton;
+
+        [SerializeField] private UIManager _uiManager;
+
         public GameManager _gameManager;
 
         /// <summary>
@@ -206,6 +209,10 @@ namespace UNO
         public override void OnClientConnect()
         {
             base.OnClientConnect();
+
+            _gameManager.OnClientConnect();
+
+            _uiManager.SetState(ScreenType.Lobby);
         }
 
         /// <summary>
@@ -214,6 +221,8 @@ namespace UNO
         /// </summary>
         public override void OnClientDisconnect()
         {
+            Debug.Log("UnoNetworkManager: Client disconnected from server.");
+
             _gameManager.OnClientDisconnect();
 
             base.OnClientDisconnect();
@@ -230,13 +239,19 @@ namespace UNO
         /// </summary>
         /// <param name="transportError">TransportError enum.</param>
         /// <param name="message">String message of the error.</param>
-        public override void OnClientError(TransportError transportError, string message) { }
+        public override void OnClientError(TransportError transportError, string message)
+        {
+            Debug.LogError($"UnoNetworkManager: Client error - {transportError}: {message}");
+        }
 
         /// <summary>
         /// Called on client when transport raises an exception.</summary>
         /// </summary>
         /// <param name="exception">Exception thrown from the Transport.</param>
-        public override void OnClientTransportException(Exception exception) { }
+        public override void OnClientTransportException(Exception exception)
+        {
+            Debug.LogError($"UnoNetworkManager: Client transport exception - {exception}");
+        }
 
         #endregion
 

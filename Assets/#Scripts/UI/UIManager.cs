@@ -5,39 +5,31 @@ using UnityEngine;
 
 namespace UNO
 {
-    public enum ScreenType
-    {
-        Lobby,
-        Room,
-        Game,
-    }
-
     public class UIManager : MonoBehaviour
     {
-        public static UIManager Instance { get; private set; }
-
-        public event Action<ScreenType> OnScreenShown;
-
-        [Serializable]
-        private struct PanelEntry
-        {
-            public ScreenType ScreenType;
-            public CanvasGroup CanvasGroup;
-        }
-
-        public ScreenType ScreenType { get; private set; }
+        #region UI References
 
         [SerializeField] private List<PanelEntry> _panels;
 
-        private void Awake()
-        {
-            if (Instance != null && Instance != this)
-            {
-                Destroy(gameObject);
-                return;
-            }
+        #endregion
 
-            Instance = this;
+        #region Runtime State
+
+        public ScreenType ScreenType { get; private set; }
+
+        #endregion
+
+        #region Unity Lifecycle
+
+        private void Start()
+        {
+            var hasSavedUserName = !string.IsNullOrWhiteSpace(PlayerPrefs.GetString("UserName", string.Empty));
+
+            if (hasSavedUserName)
+                NetworkManager.singleton.StartClient();
+
+            else
+                SetState(ScreenType.Login);
         }
 
         public void SetState(ScreenType state)
@@ -46,8 +38,6 @@ namespace UNO
 
             foreach (var entry in _panels)
                 SetVisible(entry.CanvasGroup, entry.ScreenType == state);
-
-            OnScreenShown?.Invoke(state);
         }
 
         private void SetVisible(CanvasGroup group, bool visible)
@@ -59,5 +49,7 @@ namespace UNO
             group.interactable = visible;
             group.blocksRaycasts = visible;
         }
+
+        #endregion
     }
 }
