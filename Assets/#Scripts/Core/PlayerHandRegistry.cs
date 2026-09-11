@@ -1,18 +1,18 @@
 using System.Collections.Generic;
 using System;
 
-namespace UNO
+namespace CardClash
 {
     /// <summary>
     /// Server-authoritative registry of connected players, their hands,
     /// and their last-drawn-card tracking. Pure C# — no Mirror/Unity
-    /// dependency beyond the PlayerEntry/UnoCard types, so lookups and
+    /// dependency beyond the PlayerEntry/GameCard types, so lookups and
     /// mutations are centralized and unit-testable.
     /// </summary>
     public sealed class PlayerHandRegistry
     {
         private readonly Dictionary<uint, PlayerEntry> _players = new();
-        private readonly Dictionary<uint, List<UnoCard>> _hands = new();
+        private readonly Dictionary<uint, List<GameCard>> _hands = new();
         private readonly Dictionary<uint, byte?> _lastDrawnCardId = new();
 
         public IReadOnlyDictionary<uint, PlayerEntry> Players => _players;
@@ -22,7 +22,7 @@ namespace UNO
         public void AddPlayer(uint netId, PlayerEntry entry)
         {
             _players[netId] = entry;
-            _hands[netId] = new List<UnoCard>();
+            _hands[netId] = new List<GameCard>();
         }
 
         public void RemovePlayer(uint netId)
@@ -42,18 +42,18 @@ namespace UNO
         public bool TryGetEntry(uint netId, out PlayerEntry entry) =>
             _players.TryGetValue(netId, out entry);
 
-        public IReadOnlyList<UnoCard> GetHand(uint netId) =>
-            _hands.TryGetValue(netId, out var hand) ? hand : Array.Empty<UnoCard>();
+        public IReadOnlyList<GameCard> GetHand(uint netId) =>
+            _hands.TryGetValue(netId, out var hand) ? hand : Array.Empty<GameCard>();
 
         public int GetHandCount(uint netId) =>
             _hands.TryGetValue(netId, out var hand) ? hand.Count : 0;
 
-        public void AddCardsToHand(uint netId, IEnumerable<UnoCard> cards)
+        public void AddCardsToHand(uint netId, IEnumerable<GameCard> cards)
         {
             _hands[netId].AddRange(cards);
         }
 
-        public bool TryRemoveCard(uint netId, UnoCard card)
+        public bool TryRemoveCard(uint netId, GameCard card)
         {
             if (!_hands.TryGetValue(netId, out var hand))
                 return false;
@@ -82,6 +82,6 @@ namespace UNO
             return _lastDrawnCardId.TryGetValue(netId, out var id) && id == cardId;
         }
 
-        public IEnumerable<KeyValuePair<uint, List<UnoCard>>> AllHands => _hands;
+        public IEnumerable<KeyValuePair<uint, List<GameCard>>> AllHands => _hands;
     }
 }

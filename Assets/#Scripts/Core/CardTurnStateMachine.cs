@@ -1,8 +1,8 @@
 using System.Collections.Generic;
 
-namespace UNO
+namespace CardClash
 {
-    public sealed class UnoTurnStateMachine
+    public sealed class CardTurnStateMachine
     {
         private readonly List<uint> _turnOrder = new();
 

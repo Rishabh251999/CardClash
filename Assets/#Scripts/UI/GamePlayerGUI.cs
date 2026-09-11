@@ -2,7 +2,7 @@
 using TMPro;
 using UnityEngine;
 
-namespace UNO
+namespace CardClash
 {
     public class GamePlayerGUI : MonoBehaviour
     {

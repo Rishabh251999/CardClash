@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace UNO
+namespace CardClash
 {
     /// <summary>
     /// Maps CardType to its ICardEffect strategy. Falls back to

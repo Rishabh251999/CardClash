@@ -4,10 +4,10 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace UNO
+namespace CardClash
 {
     [RequireComponent(typeof(CanvasGroup))]
-    public class UnoGameEndManager : MonoBehaviour
+    public class CardGameEndManager : MonoBehaviour
     {
         #region UI References
 
@@ -56,7 +56,7 @@ namespace UNO
         {
             HideGameEndScreen();
 
-            UnoNetworkManager.Singleton._gameManager.OnRoomLeft();
+            CardNetworkManager.Singleton._gameManager.OnRoomLeft();
         }
 
 

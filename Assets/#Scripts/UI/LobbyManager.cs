@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace UNO
+namespace CardClash
 {
     public class LobbyManager : MonoBehaviour
     {

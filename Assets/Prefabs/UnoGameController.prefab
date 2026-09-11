@@ -2921,7 +2921,7 @@ GameObject:
   - component: {fileID: 4991959613760162934}
   - component: {fileID: 1978922446209270716}
   m_Layer: 0
-  m_Name: Uno Button
+  m_Name: Last Card Button
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -3256,7 +3256,7 @@ MonoBehaviour:
   _pauseButton: {fileID: 9004346894302111613}
   _resumeButton: {fileID: 5838545840195846960}
   _passTurnButton: {fileID: 4926851628040624831}
-  _unoButton: {fileID: 1978922446209270716}
+  _lastCardButton: {fileID: 1978922446209270716}
   _redColorButton: {fileID: 6881106191363183069}
   _blueColorButton: {fileID: 202700104139214090}
   _greenColorButton: {fileID: 1998841548658987859}

@@ -1,4 +1,4 @@
-namespace UNO
+namespace CardClash
 {
     public sealed class DefaultCardEffect : ICardEffect
     {

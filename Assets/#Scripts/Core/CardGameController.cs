@@ -4,12 +4,13 @@ using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.Serialization;
 using UnityEngine.UI;
 
-namespace UNO
+namespace CardClash
 {
     [RequireComponent(typeof(NetworkMatch))]
-    public class UnoGameController : NetworkBehaviour, ICardEffectContext
+    public class CardGameController : NetworkBehaviour, ICardEffectContext
     {
 
         #region Constants / Colors
@@ -26,7 +27,7 @@ namespace UNO
 
         #region Singleton
 
-        public static UnoGameController Instance { get; private set; }
+        public static CardGameController Instance { get; private set; }
 
         #endregion
 
@@ -37,7 +38,7 @@ namespace UNO
         [SerializeField] private Card _cardPrefab;
         [SerializeField] private GamePlayerGUI _playerGUIPrefab;
         [SerializeField] private NotificationView _notificationView;
-        [SerializeField] private UnoGameEndManager _gameEndManager;
+        [SerializeField] private CardGameEndManager _gameEndManager;
 
         #endregion
 
@@ -52,7 +53,8 @@ namespace UNO
         [SerializeField] private Button _resumeButton;
         [SerializeField] private Button _passTurnButton;
 
-        [SerializeField] private Button _unoButton;
+        [FormerlySerializedAs("_unoButton")]
+        [SerializeField] private Button _lastCardButton;
         [SerializeField] private Button _redColorButton;
         [SerializeField] private Button _blueColorButton;
         [SerializeField] private Button _greenColorButton;
@@ -136,9 +138,9 @@ namespace UNO
 
         #region Runtime State
 
-        private UnoDeck _deck;
+        private CardDeck _deck;
 
-        private readonly UnoTurnStateMachine _turnState = new();
+        private readonly CardTurnStateMachine _turnState = new();
         private readonly PlayerHandRegistry _playerRegistry = new();
         private readonly CardEffectResolver _cardEffects = new();
 
@@ -170,7 +172,7 @@ namespace UNO
         private uint _currentPlayerNetId;
 
         [SyncVar(hook = nameof(OnTopDiscardChanged))]
-        private UnoCard _syncedTopDiscard;
+        private GameCard _syncedTopDiscard;
 
         [SyncVar(hook = nameof(OnTurnStartTimeChanged))]
         private double _turnStartTime;
@@ -272,7 +274,7 @@ namespace UNO
 
             _cardDrawButton.onClick.AddListener(OnDrawButtonClicked);
             _passTurnButton.onClick.AddListener(OnPassButtonClicked);
-            _unoButton.onClick.AddListener(OnUnoButtonClicked);
+            _lastCardButton.onClick.AddListener(OnLastCardButtonClicked);
 
             _passButtonCanvasGroup.alpha = 0f;
             _passButtonCanvasGroup.interactable = false;
@@ -297,7 +299,7 @@ namespace UNO
 
             _cardDrawButton.onClick.RemoveListener(OnDrawButtonClicked);
             _passTurnButton.onClick.RemoveListener(OnPassButtonClicked);
-            _unoButton.onClick.RemoveListener(OnUnoButtonClicked);
+            _lastCardButton.onClick.RemoveListener(OnLastCardButtonClicked);
 
             _redColorButton.onClick.RemoveListener(OnRedColorClicked);
             _yellowColorButton.onClick.RemoveListener(OnYellowColorClicked);
@@ -368,14 +370,14 @@ namespace UNO
         }
 
         [Client]
-        private void OnUnoButtonClicked()
+        private void OnLastCardButtonClicked()
         {
             if (!IsMyTurn())
                 return;
 
             NetworkClient.Send(new ServerDeckMessage
             {
-                serverDeckOperation = ServerDeckOperation.CallUno
+                serverDeckOperation = ServerDeckOperation.CallLastCard
             });
         }
 
@@ -561,7 +563,7 @@ namespace UNO
         #region Server - Game Setup
 
         [Server]
-        public void StartGame(UnoDeck deck, int cardsPerPlayer)
+        public void StartGame(CardDeck deck, int cardsPerPlayer)
         {
             _deck = deck;
 
@@ -623,7 +625,7 @@ namespace UNO
         {
             foreach (var (netId, entry) in _playerRegistry.Players)
             {
-                List<UnoCard> hand = new();
+                List<GameCard> hand = new();
 
                 _deck.DrawMultiple(count, hand);
 
@@ -650,7 +652,7 @@ namespace UNO
         [Server]
         private void FlipFirstCard()
         {
-            UnoCard firstCard;
+            GameCard firstCard;
 
             do
             {
@@ -770,7 +772,7 @@ namespace UNO
         #region Server - Card Play
 
         [Server]
-        public void HandlePlayerCard(NetworkConnectionToClient conn, UnoCard card, CardColor chosenWildColor)
+        public void HandlePlayerCard(NetworkConnectionToClient conn, GameCard card, CardColor chosenWildColor)
         {
             var netId = conn.identity.netId;
 
@@ -846,7 +848,7 @@ namespace UNO
 
             if (wasDrawnCard && data.cardCount == 1)
             {
-                data.hasCalledUno = true;
+                data.hasCalledLastCard = true;
             }
 
             _playerData[netId] = data;
@@ -869,14 +871,14 @@ namespace UNO
 
             if (data.cardCount == 1)
             {
-                if (!data.hasCalledUno)
+                if (!data.hasCalledLastCard)
                 {
-                    PenalizeMissedUnoCall(netId);
+                    PenalizeMissedLastCardCall(netId);
                 }
 
                 else if (wasDrawnCard)
                 {
-                    ShowNotification("UNO!", data.playerName, Color.red);
+                    ShowNotification("LAST CARD!", data.playerName, Color.red);
                 }
             }
 
@@ -885,19 +887,19 @@ namespace UNO
         }
 
         [Server]
-        private bool IsLegalPlay(UnoCard card)
+        private bool IsLegalPlay(GameCard card)
         {
             return IsPlayableAgainstTop(card);
         }
 
         [Server]
-        private bool TryRemoveFromHand(uint netId,UnoCard card)
+        private bool TryRemoveFromHand(uint netId,GameCard card)
         {
             return _playerRegistry.TryRemoveCard(netId, card);
         }
 
         [Server]
-        private bool IsPlayableAgainstTop(UnoCard card)
+        private bool IsPlayableAgainstTop(GameCard card)
         {
             if (_deck.TopDiscard is not { } topCard)
                 return true;
@@ -924,7 +926,7 @@ namespace UNO
         }
 
         [Server]
-        private void SetTopDiscard(UnoCard card, int drawCount)
+        private void SetTopDiscard(GameCard card, int drawCount)
         {
             _syncedTopDiscard = card;
 
@@ -935,7 +937,7 @@ namespace UNO
         }
 
         [Server]
-        public void HandleUnoCall(NetworkConnectionToClient conn)
+        public void HandleLastCardCall(NetworkConnectionToClient conn)
         {
             var netId = conn.identity.netId;
 
@@ -948,16 +950,16 @@ namespace UNO
                 {
                     clientDeckOperation = ClientDeckOperation.Error,
 
-                    errorMessage = "You can only call UNO when you have 2 cards or fewer."
+                    errorMessage = "You can only call LAST CARD when you have 2 cards or fewer."
                 });
 
                 return;
             }
 
-            if (data.hasCalledUno)
+            if (data.hasCalledLastCard)
                 return;
 
-            data.hasCalledUno = true;
+            data.hasCalledLastCard = true;
 
             _playerData[netId] = data;
 
@@ -965,39 +967,39 @@ namespace UNO
             {
                 entry.Conn.Send(new ClientDeckMessage
                 {
-                    clientDeckOperation = ClientDeckOperation.UnoCalled
+                    clientDeckOperation = ClientDeckOperation.LastCardCalled
                 });
             }
 
-            ShowNotification("UNO!", data.playerName, Color.red);
+            ShowNotification("LAST CARD!", data.playerName, Color.red);
         }
 
         [Server]
-        private void ResetUnoCall(uint netId)
+        private void ResetLastCardCall(uint netId)
         {
             if (!_playerData.TryGetValue(netId, out var data))
                 return;
 
-            if (!data.hasCalledUno)
+            if (!data.hasCalledLastCard)
                 return;
 
-            data.hasCalledUno = false;
+            data.hasCalledLastCard = false;
 
             _playerData[netId] = data;
         }
 
         [Server]
-        private void PenalizeMissedUnoCall(uint netId)
+        private void PenalizeMissedLastCardCall(uint netId)
         {
-            Debug.Log($"[Server] netId {netId} failed to call UNO. Applying penalty draw.");
+            Debug.Log($"[Server] netId {netId} failed to call LAST CARD. Applying penalty draw.");
 
             ForcePlayerDraw(netId, 1);
 
-            ResetUnoCall(netId);
+            ResetLastCardCall(netId);
 
             if (_playerData.TryGetValue(netId, out var data))
             {
-                ShowNotification("Missed UNO!", $"{data.playerName} drew 1 card", Color.black);
+                ShowNotification("Missed LAST CARD!", $"{data.playerName} drew 1 card", Color.black);
             }
         }
 
@@ -1016,7 +1018,7 @@ namespace UNO
                 return;
             }
 
-            var drawn = new List<UnoCard>();
+            var drawn = new List<GameCard>();
 
             _deck.DrawMultiple(count, drawn);
 
@@ -1027,7 +1029,7 @@ namespace UNO
             data.cardCount += drawn.Count;
 
             if (data.cardCount != 1)
-                ResetUnoCall(targetNetId);
+                ResetLastCardCall(targetNetId);
 
             _playerData[targetNetId] = data;
 
@@ -1049,7 +1051,7 @@ namespace UNO
         {
             var netId = conn.identity.netId;
 
-            if (!_deck.TryDraw(out UnoCard drawnCard))
+            if (!_deck.TryDraw(out GameCard drawnCard))
             {
                 Debug.LogWarning("[Server] Draw pile empty.");
 
@@ -1065,7 +1067,7 @@ namespace UNO
             _playerData[netId] = data;
 
             if (data.cardCount != 1)
-                ResetUnoCall(netId);
+                ResetLastCardCall(netId);
 
             var canPlay = IsPlayableAgainstTop(drawnCard);
 
@@ -1256,7 +1258,7 @@ namespace UNO
 
         [Client]
         public void ShowDealtCards(
-            UnoCard[] cards,
+            GameCard[] cards,
             bool applyStartDelay = false)
         {
             StartCoroutine(
@@ -1270,7 +1272,7 @@ namespace UNO
         }
 
         private IEnumerator ShowDealtCardsStaggered(
-            UnoCard[] cards,
+            GameCard[] cards,
             float startDelay)
         {
             if (startDelay > 0f)
@@ -1327,7 +1329,7 @@ namespace UNO
         [Client]
         public void OnDrawnCardReceived(
             bool canPlay,
-            UnoCard drawnCard)
+            GameCard drawnCard)
         {
             if (!canPlay)
             {
@@ -1447,7 +1449,7 @@ namespace UNO
         #region Client RPC - Card State
 
         [ClientRpc]
-        private void RpcShowTopDiscard(UnoCard card, int drawCount)
+        private void RpcShowTopDiscard(GameCard card, int drawCount)
         {
             _syncedTopDiscard = card;
 
@@ -1503,7 +1505,7 @@ namespace UNO
             }
         }
 
-        private void OnTopDiscardChanged(UnoCard oldCard, UnoCard newCard)
+        private void OnTopDiscardChanged(GameCard oldCard, GameCard newCard)
         {
             _syncedTopDiscard = newCard;
 
@@ -1585,7 +1587,7 @@ namespace UNO
             }
         }
 
-        private bool IsValidPlay(UnoCard card)
+        private bool IsValidPlay(GameCard card)
         {
             if (card.Type is CardType.Wild
                 || card.Type is CardType.WildDrawFour)

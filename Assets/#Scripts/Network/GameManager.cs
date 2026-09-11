@@ -7,7 +7,7 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace UNO
+namespace CardClash
 {
     public class GameManager : MonoBehaviour
     {
@@ -31,9 +31,9 @@ namespace UNO
         /// </summary>
         internal readonly Dictionary<NetworkConnectionToClient, PlayerRoomInfo> playerInfos = new();
 
-        private readonly Dictionary<Guid, UnoDeck> roomDecks = new();
+        private readonly Dictionary<Guid, CardDeck> roomDecks = new();
 
-        private readonly Dictionary<Guid, UnoGameController> matchControllers = new();
+        private readonly Dictionary<Guid, CardGameController> matchControllers = new();
 
         /// <summary>
         /// Network connections that haven't joined a room yet
@@ -62,7 +62,7 @@ namespace UNO
         private int playerIndex = 1;
 
         [Header("GUI References")]
-        [SerializeField] private UnoGameController matchControllerPrefab;
+        [SerializeField] private CardGameController matchControllerPrefab;
 
         [SerializeField] private Button joinButton;
 
@@ -271,7 +271,7 @@ namespace UNO
         }
 
         [ServerCallback]
-        private bool TryGetMatchController(NetworkConnectionToClient conn, out UnoGameController controller)
+        private bool TryGetMatchController(NetworkConnectionToClient conn, out CardGameController controller)
         {
             controller = null;
 
@@ -320,8 +320,8 @@ namespace UNO
                     controller.HandlePassTurn(conn); // Draw card first, then pass turn
                     break;
 
-                case ServerDeckOperation.CallUno:
-                    controller.HandleUnoCall(conn);
+                case ServerDeckOperation.CallLastCard:
+                    controller.HandleLastCardCall(conn);
                     break;
             }
         }
@@ -534,7 +534,7 @@ namespace UNO
             NetworkServer.Spawn(matchController.gameObject);
             matchControllers[roomCode] = matchController;
 
-            UnoDeck deck = new();
+            CardDeck deck = new();
             deck.BuildDeck();
             roomDecks[roomCode] = deck;
 
@@ -570,7 +570,7 @@ namespace UNO
         }
 
         [ServerCallback]
-        private void HandleQuitMatch(NetworkConnectionToClient conn, UnoGameController controller)
+        private void HandleQuitMatch(NetworkConnectionToClient conn, CardGameController controller)
         {
             var isOwner = playerInfos.TryGetValue(conn, out var playerInfo) && playerInfo.isOwner;
 
@@ -582,7 +582,7 @@ namespace UNO
         }
 
         [ServerCallback]
-        private void EndMatchForRoom(UnoGameController controller)
+        private void EndMatchForRoom(CardGameController controller)
         {
             if (!controller.TryGetComponent<NetworkMatch>(out var networkMatch))
                 return;
@@ -661,7 +661,7 @@ namespace UNO
         [ClientCallback]
         void OnClientDeckMessage(ClientDeckMessage msg)
         {
-            if(UnoGameController.Instance is not { } gc)
+            if(CardGameController.Instance is not { } gc)
                 return;
 
             switch (msg.clientDeckOperation)

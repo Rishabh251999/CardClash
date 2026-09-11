@@ -1,8 +1,8 @@
-namespace UNO
+namespace CardClash
 {
     /// <summary>
     /// Minimal surface a card effect needs to manipulate turn order and
-    /// force draws. Implemented by UnoGameController so effects don't need
+    /// force draws. Implemented by CardGameController so effects don't need
     /// to know about Mirror/NetworkBehaviour internals.
     /// </summary>
     public interface ICardEffectContext

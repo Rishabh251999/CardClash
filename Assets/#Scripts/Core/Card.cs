@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace UNO
+namespace CardClash
 {
     [RequireComponent(typeof(Image), typeof(Button))]
     [RequireComponent(typeof(LayoutElement))]
@@ -37,7 +37,7 @@ namespace UNO
 
         #region Runtime State
 
-        public UnoCard CardData;
+        public GameCard CardData;
 
         private Vector3 _dealTargetLocalPos;
 
@@ -68,7 +68,7 @@ namespace UNO
         private void OnCardClicked()
         {
             if (NetworkClient.localPlayer is not { } localPlayer ||
-                !localPlayer.TryGetComponent<UnoPlayerController>(out var playerController))
+                !localPlayer.TryGetComponent<CardPlayerController>(out var playerController))
                 return;
 
             playerController.TryPlayCard(this);
@@ -126,7 +126,7 @@ namespace UNO
             return s;
         }
 
-        public void Setup(UnoCard card)
+        public void Setup(GameCard card)
         {
             CardData = card;
 
@@ -153,7 +153,7 @@ namespace UNO
         private IEnumerator MoveToTarget(Transform target, Action onComplete)
         {
             Vector3 startPos = transform.position;
-            float duration = UnoGameController.Instance.PlayMoveDuration; // cache once, avoid repeated singleton+property lookups every frame
+            float duration = CardGameController.Instance.PlayMoveDuration; // cache once, avoid repeated singleton+property lookups every frame
 
             float elapsed = 0f;
             while (elapsed < duration)
@@ -192,7 +192,7 @@ namespace UNO
         {
             Vector3 startPos = transform.position;
             Vector3 targetWorldPos = parent.TransformPoint(targetLocalPos);
-            float duration = UnoGameController.Instance.PlayMoveDuration; // cache once
+            float duration = CardGameController.Instance.PlayMoveDuration; // cache once
 
             float elapsed = 0f;
             while (elapsed < duration)

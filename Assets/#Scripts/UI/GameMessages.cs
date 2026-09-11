@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace UNO
+namespace CardClash
 {
     #region Network Messages
 
@@ -23,7 +23,7 @@ namespace UNO
     {
         public ServerDeckOperation serverDeckOperation;
         public Guid RoomCode;
-        public UnoCard Card;
+        public GameCard Card;
         public CardColor chosenWildColor;
     }
 
@@ -47,8 +47,8 @@ namespace UNO
     {
         public ClientDeckOperation clientDeckOperation;
         public Guid RoomCode;
-        public UnoCard[] Cards;
-        public UnoCard TopDiscardCard;
+        public GameCard[] Cards;
+        public GameCard TopDiscardCard;
         public int DrawPileCount;
         public string errorMessage;
         public bool CanPlayDrawnCard;
@@ -85,7 +85,7 @@ namespace UNO
     public struct PlayerGameInfo
     {
         public bool isOwner;
-        public bool hasCalledUno;
+        public bool hasCalledLastCard;
 
         public int cardCount;
         public uint connectionId;
@@ -121,7 +121,7 @@ namespace UNO
         PlayCard = 2, 
         PassTurn = 3,
         QuitMatch = 4,
-        CallUno = 5,
+        CallLastCard = 5,
     }
 
     /// <summary>
@@ -153,8 +153,8 @@ namespace UNO
         Error = 6,
         StackedDraw = 7,
         PlayerQuit = 8,
-        UnoCalled = 9,   
-        UnoPenalty = 10,
+        LastCardCalled = 9,   
+        LastCardPenalty = 10,
     }
 
     #endregion
@@ -214,7 +214,7 @@ namespace UNO
     }
 
     [Serializable]
-    public struct UnoCard
+    public struct GameCard
     {
         public byte Id;
 

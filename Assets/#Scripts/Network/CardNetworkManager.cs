@@ -8,13 +8,13 @@ using UnityEngine;
 	Documentation: https://mirror-networking.gitbook.io/docs/components/network-manager
 	API Reference: https://mirror-networking.com/docs/api/Mirror.NetworkManager.html
 */
-namespace UNO
+namespace CardClash
 {
-    public class UnoNetworkManager : NetworkManager
+    public class CardNetworkManager : NetworkManager
     {
         // Overrides the base singleton so we don't
         // have to cast to this type everywhere.
-        public static UnoNetworkManager Singleton => (UnoNetworkManager)singleton;
+        public static CardNetworkManager Singleton => (CardNetworkManager)singleton;
 
         [SerializeField] private UIManager _uiManager;
 
@@ -139,7 +139,7 @@ namespace UNO
         public override void OnServerConnect(NetworkConnectionToClient conn)
         {
             // Player connected to server; they should be in the lobby until they create/join a room.
-            Debug.Log($"UnoNetworkManager: Connection {conn.connectionId} connected and placed in lobby.");
+            Debug.Log($"CardNetworkManager: Connection {conn.connectionId} connected and placed in lobby.");
             base.OnServerConnect(conn);
         }
 
@@ -221,7 +221,7 @@ namespace UNO
         /// </summary>
         public override void OnClientDisconnect()
         {
-            Debug.Log("UnoNetworkManager: Client disconnected from server.");
+            Debug.Log("CardNetworkManager: Client disconnected from server.");
 
             _gameManager.OnClientDisconnect();
 
@@ -241,7 +241,7 @@ namespace UNO
         /// <param name="message">String message of the error.</param>
         public override void OnClientError(TransportError transportError, string message)
         {
-            Debug.LogError($"UnoNetworkManager: Client error - {transportError}: {message}");
+            Debug.LogError($"CardNetworkManager: Client error - {transportError}: {message}");
         }
 
         /// <summary>
@@ -250,7 +250,7 @@ namespace UNO
         /// <param name="exception">Exception thrown from the Transport.</param>
         public override void OnClientTransportException(Exception exception)
         {
-            Debug.LogError($"UnoNetworkManager: Client transport exception - {exception}");
+            Debug.LogError($"CardNetworkManager: Client transport exception - {exception}");
         }
 
         #endregion

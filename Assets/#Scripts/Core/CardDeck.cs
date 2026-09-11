@@ -2,14 +2,14 @@ using Mirror;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace UNO
+namespace CardClash
 {
-    public class UnoDeck
+    public class CardDeck
     {
         #region Runtime Collections
 
-        private readonly List<UnoCard> _drawPile = new(108);
-        private readonly List<UnoCard> _discardPile = new(108);
+        private readonly List<GameCard> _drawPile = new(108);
+        private readonly List<GameCard> _discardPile = new(108);
 
         #endregion
 
@@ -17,13 +17,13 @@ namespace UNO
 
         public int DrawPileCount => _drawPile.Count;
         public int DiscardPileCount => _discardPile.Count;
-        public UnoCard? TopDiscard => _discardPile.Count > 0 ? _discardPile[^1] : null;
+        public GameCard? TopDiscard => _discardPile.Count > 0 ? _discardPile[^1] : null;
 
         #endregion
 
         #region Unity Lifecycle
 
-        private UnoCard Make(ref byte id, CardColor color, CardType type, byte faceValue) =>
+        private GameCard Make(ref byte id, CardColor color, CardType type, byte faceValue) =>
             new() { Id = id++, Color = color, Type = type, FaceValue = faceValue };
 
         #endregion
@@ -81,15 +81,15 @@ namespace UNO
         }
 
         [Server]
-        public void ReturnToDraw(UnoCard card) => _drawPile.Add(card);
+        public void ReturnToDraw(GameCard card) => _drawPile.Add(card);
 
         [Server]
-        public int DrawMultiple(int count, List<UnoCard> hand)
+        public int DrawMultiple(int count, List<GameCard> hand)
         {
             int drawn = 0;
             for (int i = 0; i < count; i++)
             {
-                if (!TryDraw(out UnoCard card)) break;
+                if (!TryDraw(out GameCard card)) break;
                 hand.Add(card);
                 drawn++;
             }
@@ -97,7 +97,7 @@ namespace UNO
         }
 
         [Server]
-        public bool TryDraw(out UnoCard card)
+        public bool TryDraw(out GameCard card)
         {
             if (_drawPile.Count == 0)
                 ReshuffleDiscardIntoDraw();
@@ -105,7 +105,7 @@ namespace UNO
             if (_drawPile.Count == 0)
             {
                 card = default;
-                Debug.LogWarning("[UnoDeck] Both piles empty — cannot draw.");
+                Debug.LogWarning("[CardDeck] Both piles empty — cannot draw.");
                 return false;
             }
 
@@ -115,14 +115,14 @@ namespace UNO
         }
 
         [Server]
-        public void Discard(UnoCard card) => _discardPile.Add(card);
+        public void Discard(GameCard card) => _discardPile.Add(card);
 
         [Server]
         private void ReshuffleDiscardIntoDraw()
         {
             if (_discardPile.Count <= 1) return;
 
-            UnoCard top = _discardPile[^1];
+            GameCard top = _discardPile[^1];
             _discardPile.RemoveAt(_discardPile.Count - 1);
 
             _drawPile.AddRange(_discardPile);
@@ -130,7 +130,7 @@ namespace UNO
             _discardPile.Add(top);
 
             Shuffle();
-            Debug.Log($"[UnoDeck] Reshuffled {_drawPile.Count} cards from discard into draw pile.");
+            Debug.Log($"[CardDeck] Reshuffled {_drawPile.Count} cards from discard into draw pile.");
         }
 
         #endregion

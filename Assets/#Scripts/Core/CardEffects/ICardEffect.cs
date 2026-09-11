@@ -1,4 +1,4 @@
-namespace UNO
+namespace CardClash
 {
     /// <summary>
     /// Strategy interface for resolving what happens to turn order/draw

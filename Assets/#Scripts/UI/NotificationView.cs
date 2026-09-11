@@ -1,7 +1,7 @@
 using TMPro;
 using UnityEngine;
 
-namespace UNO
+namespace CardClash
 {
     [RequireComponent(typeof(CanvasGroup))]
     public class NotificationView : MonoBehaviour

@@ -2,9 +2,9 @@ using Mirror;
 using System;
 using UnityEngine;
 
-namespace UNO
+namespace CardClash
 {
-    public class UnoPlayerController : NetworkBehaviour
+    public class CardPlayerController : NetworkBehaviour
     {
         #region Unity Lifecycle
 
@@ -13,7 +13,7 @@ namespace UNO
             if (!isLocalPlayer)
                 return;
 
-            if (UnoGameController.Instance is not { } instance)
+            if (CardGameController.Instance is not { } instance)
                 return;
 
             if (!instance.IsMyTurn())
@@ -29,7 +29,7 @@ namespace UNO
             SendPlay(card, instance, CardColor.None);
         }
 
-        private void SendPlay(Card card, UnoGameController instance, CardColor chosenColor)
+        private void SendPlay(Card card, CardGameController instance, CardColor chosenColor)
         {
             NetworkClient.Send(new ServerDeckMessage
             {

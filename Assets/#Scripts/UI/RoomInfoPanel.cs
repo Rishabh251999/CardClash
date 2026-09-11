@@ -4,7 +4,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace UNO
+namespace CardClash
 {
     public class RoomInfoPanel : MonoBehaviour
     {
