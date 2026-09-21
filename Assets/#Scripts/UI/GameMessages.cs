@@ -266,10 +266,12 @@ namespace CardClash
 
     public enum ScreenType
     {
+        Loading,
         Login,
         Lobby,
-        Room,
         RoomInfo,
+        Room,
+        ConnectionError,
         Game,
     }
 

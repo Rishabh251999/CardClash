@@ -673,7 +673,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: dc2d1409d7737994ba60cdc232469fd7, type: 3}
+  m_Sprite: {fileID: -8622259438476403829, guid: fe8648c3a976e8d428afcd20074ce8e4, type: 3}
   m_Type: 0
   m_PreserveAspect: 1
   m_FillCenter: 1
@@ -3274,8 +3274,7 @@ MonoBehaviour:
   _hand: {fileID: 6582705850152773721}
   _cardDrawGameobject: {fileID: 1741146029258031769}
   _cardTargetTransform: {fileID: 8923102032844777173}
-  _cardPerPlayer: 0
-  _turnTimeLimit: 15
+  _turnTimeLimit: 7
   _gameTimeLimit: 300
   _playMoveDuration: 0.3
   _countdownStepDuration: 1
@@ -3506,7 +3505,7 @@ MonoBehaviour:
   m_fontColor32:
     serializedVersion: 2
     rgba: 4278190080
-  m_fontColor: {r: 0, g: 0, b: 0, a: 1}
+  m_fontColor: {r: 1, g: 1, b: 1, a: 1}
   m_enableVertexGradient: 0
   m_colorMode: 3
   m_fontColorGradient:

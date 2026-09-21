@@ -112,7 +112,6 @@ namespace CardClash
 
         #region Inspector - Game Settings
 
-        [SerializeField] private int _cardPerPlayer;
         [SerializeField] private float _turnTimeLimit = 15f;
         [SerializeField] private float _gameTimeLimit = 300f;
         [SerializeField] private float _playMoveDuration = 0.3f;
@@ -130,6 +129,8 @@ namespace CardClash
         private readonly Dictionary<uint, int> _netIdToGuiIndex = new();
 
         private readonly SyncDictionary<uint, PlayerGameInfo> _playerData = new();
+
+        private int _cardPerPlayer;
 
         #endregion
 
@@ -511,7 +512,7 @@ namespace CardClash
                 });
             }
 
-            ShowNotification("Player left", quittingPlayerName, Color.black);
+            ShowNotification("Player left", quittingPlayerName, Color.white);
 
             if (_turnState.PlayerCount <= 1)
             {
@@ -712,7 +713,7 @@ namespace CardClash
             ForcePlayerDraw(netIdForThisTurn, 1);
 
             if (_playerData.TryGetValue(netIdForThisTurn, out var data))
-                ShowNotification("Time's up!", $"{data.playerName} drew a card", Color.black);
+                ShowNotification("Time's up!", $"{data.playerName} drew a card", Color.white);
 
             AdvanceTurn();
         }
@@ -995,7 +996,7 @@ namespace CardClash
 
             if (_playerData.TryGetValue(netId, out var data))
             {
-                ShowNotification("Missed LAST CARD!", $"{data.playerName} drew 1 card", Color.black);
+                ShowNotification("Missed LAST CARD!", $"{data.playerName} drew 1 card", Color.white);
             }
         }
 

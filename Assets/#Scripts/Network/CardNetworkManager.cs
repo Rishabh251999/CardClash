@@ -12,6 +12,8 @@ namespace CardClash
 {
     public class CardNetworkManager : NetworkManager
     {
+        private readonly WaitForSeconds _waitForSeconds0_75 = new(0.75f);
+
         // Overrides the base singleton so we don't
         // have to cast to this type everywhere.
         public static CardNetworkManager Singleton => (CardNetworkManager)singleton;
@@ -138,8 +140,14 @@ namespace CardClash
         /// <param name="conn">Connection from client.</param>
         public override void OnServerConnect(NetworkConnectionToClient conn)
         {
+            var isHostConnection = conn == NetworkServer.localConnection;
             // Player connected to server; they should be in the lobby until they create/join a room.
-            Debug.Log($"CardNetworkManager: Connection {conn.connectionId} connected and placed in lobby.");
+            Debug.Log(
+        $"[SERVER] Client connected\n" +
+        $"Connection ID: {conn.connectionId}\n" +
+        $"Address: {conn.address}\n" +
+        $"Is Host: {isHostConnection}"
+    );
             base.OnServerConnect(conn);
         }
 
@@ -212,7 +220,7 @@ namespace CardClash
 
             _gameManager.OnClientConnect();
 
-            _uiManager.SetState(ScreenType.Lobby);
+            Debug.Log("CardNetworkManager: Client connected to server.");
         }
 
         /// <summary>
@@ -223,9 +231,18 @@ namespace CardClash
         {
             Debug.Log("CardNetworkManager: Client disconnected from server.");
 
-            _gameManager.OnClientDisconnect();
+            StartCoroutine(IE_OnClientDisconnect());
 
             base.OnClientDisconnect();
+        }
+        
+        private IEnumerator IE_OnClientDisconnect()
+        {
+            yield return _waitForSeconds0_75;
+
+            _gameManager.OnClientDisconnect();
+
+            _uiManager.SetState(ScreenType.ConnectionError, instant: true);
         }
 
         /// <summary>
@@ -242,6 +259,8 @@ namespace CardClash
         public override void OnClientError(TransportError transportError, string message)
         {
             Debug.LogError($"CardNetworkManager: Client error - {transportError}: {message}");
+
+            StartCoroutine(IE_OnClientDisconnect());
         }
 
         /// <summary>
@@ -251,6 +270,8 @@ namespace CardClash
         public override void OnClientTransportException(Exception exception)
         {
             Debug.LogError($"CardNetworkManager: Client transport exception - {exception}");
+
+            StartCoroutine(IE_OnClientDisconnect());
         }
 
         #endregion

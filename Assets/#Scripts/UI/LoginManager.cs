@@ -13,6 +13,12 @@ namespace CardClash
 
         #endregion
 
+        #region Script References
+
+        [SerializeField] private UIManager _uiManager;
+
+        #endregion
+
         #region UI References
 
         [Header("UI References")]
@@ -59,7 +65,8 @@ namespace CardClash
 
             PlayerPrefs.SetString("UserName", _pendingUserName);
 
-            NetworkManager.singleton.StartClient();
+            if (_uiManager is { })
+                _uiManager.SetState(ScreenType.Lobby);
         }
 
         #endregion

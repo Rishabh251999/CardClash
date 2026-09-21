@@ -1,4 +1,3 @@
-using JetBrains.Annotations;
 using Mirror;
 using System;
 using System.Collections;
@@ -85,7 +84,6 @@ namespace CardClash
         void ResetRoomManager()
         {
             InitializeData();
-            gameObject.SetActive(false);
         }
 
         #endregion
@@ -217,8 +215,6 @@ namespace CardClash
             Card.PopulateCardSprites();
 
             InitializeData();
-
-            _uiManager.SetState(ScreenType.Lobby);
 
             _lobbyManager.UpdateRoomList(openRooms);
 
@@ -556,11 +552,20 @@ namespace CardClash
                 });
 
                 var player = Instantiate(NetworkManager.singleton.playerPrefab);
+
                 if (player.TryGetComponent<NetworkMatch>(out var playerNetworkMatch))
                 {
                     playerNetworkMatch.matchId = roomCode;
                 }
-                NetworkServer.AddPlayerForConnection(playerConn, player);
+                else
+                {
+                    Debug.LogError("Player prefab does not have a NetworkMatch component.");
+                }
+
+                if (playerConn.identity != null)
+                    NetworkServer.ReplacePlayerForConnection(playerConn, player, ReplacePlayerOptions.Destroy);
+                else
+                    NetworkServer.AddPlayerForConnection(playerConn, player);
 
                 matchController.AddPlayer(playerConn, playerInfos[playerConn]);
 

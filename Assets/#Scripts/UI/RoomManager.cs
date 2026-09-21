@@ -153,7 +153,7 @@ namespace CardClash
                 if (!player.isReady)
                     everyoneReady = false;
             }
-            _startButton.interactable = everyoneReady && _owner;
+            _startButton.interactable = everyoneReady && _owner && playerInfo.Length == maxPlayers;
 
             _playerCountText.SetText($"{playerInfo.Length} / {maxPlayers}");
         }
