@@ -32,6 +32,7 @@ namespace CardClash
         #region Runtime State
 
         private bool _fakeLoadingComplete;
+        private bool _isLoadingState;
 
         #endregion
 
@@ -39,35 +40,43 @@ namespace CardClash
 
         private void Awake()
         {
+            if (Application.isBatchMode)
+                return;
+
+            _uiManager.OnStateChanged += HandleStateChange;
+
             if (_loadingSlider is { } slider)
                 slider.value = 0f;
         }
 
-        private void Start()
-        {
-            ConnectToServer();
-        }
-
         private void Update()
         {
+            if (Application.isBatchMode)
+                return;
+
             if (_loadingSlider is not { } slider)
                 return;
 
             UpdateFakeLoading(slider);
 
+            if (_fakeLoadingComplete && _isLoadingState)
+                ConnectToServer();
+
             if (_fakeLoadingComplete && NetworkClient.isConnected)
             {
                 slider.value = ConnectedProgress;
-
-                ResolveInitialScreen();
 
                 enabled = false;
             }
         }
 
-        #endregion
+        private void OnDestroy()
+        {
+            if (Application.isBatchMode)
+                return;
 
-        #region Loading
+            _uiManager.OnStateChanged -= HandleStateChange;
+        }
 
         private void UpdateFakeLoading(Slider slider)
         {
@@ -75,11 +84,7 @@ namespace CardClash
                 return;
 
             // Fake loading progresses independently.
-            slider.value = Mathf.MoveTowards(
-                slider.value,
-                WaitingProgress,
-                ProgressSpeed * Time.deltaTime
-            );
+            slider.value = Mathf.MoveTowards(slider.value, WaitingProgress,ProgressSpeed * Time.deltaTime);
 
             if (slider.value >= WaitingProgress)
             {
@@ -88,36 +93,19 @@ namespace CardClash
             }
         }
 
-        #endregion
-
-        #region Client Methods
-
         private void ConnectToServer()
         {
             if (NetworkClient.isConnected || NetworkClient.active)
                 return;
 
-            if (NetworkManager.singleton is not { } networkManager)
-                return;
+            Debug.Log("Connecting to server...");
 
-            networkManager.StartClient();
+            NetworkManager.singleton.StartClient();
         }
 
-        private void ResolveInitialScreen()
+        private void HandleStateChange(ScreenType state)
         {
-            var hasSavedUserName =
-                !string.IsNullOrWhiteSpace(
-                    PlayerPrefs.GetString("UserName", string.Empty)
-                );
-
-            if (_uiManager is { } uiManager)
-            {
-                uiManager.SetState(
-                    hasSavedUserName
-                        ? ScreenType.Lobby
-                        : ScreenType.Login
-                );
-            }
+            _isLoadingState = state is ScreenType.Loading;
         }
 
         #endregion

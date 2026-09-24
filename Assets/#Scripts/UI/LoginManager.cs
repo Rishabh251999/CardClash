@@ -11,6 +11,8 @@ namespace CardClash
         private const int MinUserNameLength = 3;
         private const int MaxUserNameLength = 16;
 
+        private const string UserNameKey = "UserName";
+
         #endregion
 
         #region Script References
@@ -63,10 +65,18 @@ namespace CardClash
 
             _enterButton.interactable = false;
 
-            PlayerPrefs.SetString("UserName", _pendingUserName);
+            PlayerPrefs.SetString(UserNameKey, _pendingUserName);
 
-            if (_uiManager is { })
-                _uiManager.SetState(ScreenType.Lobby);
+            TryConnect();
+        }
+
+        private void TryConnect()
+        {
+            if (NetworkServer.active || NetworkClient.isConnected || NetworkClient.active)
+                return;
+
+            NetworkManager.singleton.enabled = true;
+            NetworkManager.singleton.StartClient();
         }
 
         #endregion

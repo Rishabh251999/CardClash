@@ -1,5 +1,4 @@
 using Mirror;
-using Mirror.Examples.MultipleMatch;
 using System;
 using System.Collections;
 using UnityEngine;
@@ -12,7 +11,7 @@ namespace CardClash
 {
     public class CardNetworkManager : NetworkManager
     {
-        private readonly WaitForSeconds _waitForSeconds0_75 = new(0.75f);
+        private readonly WaitForSeconds _waitForSeconds0_75 = new(2f);
 
         // Overrides the base singleton so we don't
         // have to cast to this type everywhere.
@@ -140,14 +139,6 @@ namespace CardClash
         /// <param name="conn">Connection from client.</param>
         public override void OnServerConnect(NetworkConnectionToClient conn)
         {
-            var isHostConnection = conn == NetworkServer.localConnection;
-            // Player connected to server; they should be in the lobby until they create/join a room.
-            Debug.Log(
-        $"[SERVER] Client connected\n" +
-        $"Connection ID: {conn.connectionId}\n" +
-        $"Address: {conn.address}\n" +
-        $"Is Host: {isHostConnection}"
-    );
             base.OnServerConnect(conn);
         }
 
@@ -220,6 +211,8 @@ namespace CardClash
 
             _gameManager.OnClientConnect();
 
+            _uiManager.SetState(ScreenType.Lobby, instant: false);
+
             Debug.Log("CardNetworkManager: Client connected to server.");
         }
 
@@ -235,13 +228,14 @@ namespace CardClash
 
             base.OnClientDisconnect();
         }
-        
+
         private IEnumerator IE_OnClientDisconnect()
         {
             yield return _waitForSeconds0_75;
 
             _gameManager.OnClientDisconnect();
 
+            _uiManager.enabled = true;
             _uiManager.SetState(ScreenType.ConnectionError, instant: true);
         }
 

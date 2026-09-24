@@ -7446,7 +7446,7 @@ MonoBehaviour:
   - ScreenType: 0
     CanvasGroup: {fileID: 667755634}
   _fadeDuration: 1
-  _fadeInDelay: 0.75
+  _fadeInDelay: 0.25
 --- !u!1 &1728180426
 GameObject:
   m_ObjectHideFlags: 0
@@ -8454,7 +8454,7 @@ SceneRoots:
   m_Roots:
   - {fileID: 519420032}
   - {fileID: 619394802}
-  - {fileID: 1703332057}
   - {fileID: 2108429976}
+  - {fileID: 1703332057}
   - {fileID: 445219985}
   - {fileID: 1728180428}

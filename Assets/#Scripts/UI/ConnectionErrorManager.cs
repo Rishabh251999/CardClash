@@ -9,8 +9,7 @@ namespace CardClash
     {
         #region Constants/Readonly 
 
-        private const float RetryDuration = 5.0f;
-        private readonly WaitForSeconds _waitForSeconds1_0 = new(1.0f);
+        private readonly WaitForSeconds _waitForSeconds5_0 = new(5.0f);
 
         #endregion
 
@@ -33,8 +32,6 @@ namespace CardClash
 
         #region Runtime State
 
-        private Coroutine _retryCoroutine;
-
         #endregion
 
         #region Unity Lifecycle
@@ -44,8 +41,6 @@ namespace CardClash
             _retryButton.onClick.AddListener(RetryConnection);
 
             _reconnecting.alpha = 0.0f;
-
-            SetReconnectingAnimation(false);
         }
 
         private void OnDestroy()
@@ -56,56 +51,35 @@ namespace CardClash
 
         private void RetryConnection()
         {
-            if (_retryCoroutine != null)
-                return;
-
-            _retryCoroutine = StartCoroutine(RetryConnectionRoutine());
+            StartCoroutine(IE_RetryConnection());
         }
 
-        private IEnumerator RetryConnectionRoutine()
+        private IEnumerator IE_RetryConnection()
         {
-            _retryButton.interactable = false;
             _reconnecting.alpha = 1.0f;
 
-            SetReconnectingAnimation(true);
+            _reconnectingAnimation.Play();
 
             if (NetworkServer.active)
             {
-                yield return _waitForSeconds1_0;
+                Debug.LogWarning("RetryConnection: NetworkServer is active, cannot retry connection.");
             }
-
-            var elapsedTime = 0.0f;
-
-            NetworkManager.singleton.StartClient();
-
-            while (elapsedTime < RetryDuration)
+            else
             {
-                if (NetworkClient.isConnected)
+                if (NetworkClient.isConnected || NetworkClient.active)
                 {
-                    break;
+                    Debug.Log("RetryConnection: Stale client state detected, stopping client before retry...");
+                    NetworkManager.singleton.StopClient();
                 }
 
-                elapsedTime += Time.deltaTime;
-                yield return null;
+                Debug.Log("RetryConnection: Attempting to reconnect to the server...");
+                NetworkManager.singleton.StartClient();
             }
 
-            SetReconnectingAnimation(false);
+            yield return _waitForSeconds5_0;
+            _reconnectingAnimation.Stop();
 
             _reconnecting.alpha = 0.0f;
-            _retryButton.interactable = true;
-
-            _retryCoroutine = null;
-        }
-
-        private void SetReconnectingAnimation(bool isPlaying)
-        {
-            if (_reconnectingAnimation == null)
-                return;
-
-            if (isPlaying)
-                _reconnectingAnimation.Play();
-            else
-                _reconnectingAnimation.Stop();
         }
 
         #endregion

@@ -30,14 +30,21 @@ namespace CardClash
 
         private void Start()
         {
-            if (NetworkServer.active && !NetworkClient.active)
-            {
+            if (Application.isBatchMode)
                 return;
+
+            var hasSavedUserName = !string.IsNullOrWhiteSpace(PlayerPrefs.GetString("UserName", string.Empty));
+
+            if(hasSavedUserName)
+            {
+                SetState(ScreenType.Loading, instant: true);
             }
 
-            SetState(ScreenType.Loading, instant: true);
+            else
+            {
+                SetState(ScreenType.Login, instant: true);
+            }
         }
-
 
         #endregion
 
