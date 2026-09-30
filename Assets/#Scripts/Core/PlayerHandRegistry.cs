@@ -11,9 +11,9 @@ namespace CardClash
     /// </summary>
     public sealed class PlayerHandRegistry
     {
+        private readonly Dictionary<uint, byte> _lastDrawnCardId = new();
         private readonly Dictionary<uint, PlayerEntry> _players = new();
         private readonly Dictionary<uint, List<GameCard>> _hands = new();
-        private readonly Dictionary<uint, byte?> _lastDrawnCardId = new();
 
         public IReadOnlyDictionary<uint, PlayerEntry> Players => _players;
 

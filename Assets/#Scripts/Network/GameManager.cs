@@ -10,80 +10,54 @@ namespace CardClash
 {
     public class GameManager : MonoBehaviour
     {
-        /// <summary>
-        /// Cross-reference of client that created the corresponding room
-        /// </summary>
-        internal readonly Dictionary<NetworkConnectionToClient, Guid> playerRooms = new();
+        #region constants/readonly
 
-        /// <summary>
-        /// Open rooms that are available for joining
-        /// </summary>
-        internal readonly Dictionary<Guid, RoomInfo> openRooms = new();
+        #endregion
 
-        /// <summary>
-        /// Network connections of all players in a room
-        /// </summary>
-        internal readonly Dictionary<Guid, HashSet<NetworkConnectionToClient>> roomConnections = new();
+        #region Script References
 
-        /// <summary>
-        /// Player information by Network Connection
-        /// </summary>
-        internal readonly Dictionary<NetworkConnectionToClient, PlayerRoomInfo> playerInfos = new();
-
-        private readonly Dictionary<Guid, CardDeck> roomDecks = new();
-
-        private readonly Dictionary<Guid, CardGameController> matchControllers = new();
-
-        /// <summary>
-        /// Network connections that haven't joined a room yet
-        /// </summary>
-        internal readonly List<NetworkConnectionToClient> waitingConnections = new();
-
-        /// <summary>
-        /// Room code the local player created
-        /// </summary>
-        internal Guid localPlayerRoom = Guid.Empty;
-
-        /// <summary>
-        /// Room code the local player joined
-        /// </summary>
-        internal Guid localJoinedRoom = Guid.Empty;
-
-        /// <summary>
-        /// Room code selected in the room list
-        /// </summary>
-        internal Guid selectedRoom = Guid.Empty;
-
+        [Header("Script References")]
         [SerializeField] private LobbyManager _lobbyManager;
         [SerializeField] private RoomManager _roomManager;
         [SerializeField] private UIManager _uiManager;
 
-        private int playerIndex = 1;
+        #endregion
+
+        #region GUI References
+
+        [Space(5f)]
 
         [Header("GUI References")]
         [SerializeField] private CardGameController matchControllerPrefab;
-
         [SerializeField] private Button joinButton;
 
-        #region Initialization
+        #endregion
 
-        internal void InitializeData()
+        #region Runtime State
+
+        private readonly ServerRoomRepository _serverRepo = new();
+        private readonly ClientRoomRepository _clientRepo = new();
+        internal ClientRoomRepository ClientRoomRepository => _clientRepo;
+
+        private PlayerReconnectionService _reconnectService;
+
+        private int playerIndex = 1;
+
+        #endregion
+
+        #region Unity Lifecycle
+
+        private void Awake()
         {
-            playerRooms.Clear();
-            openRooms.Clear();
-            roomConnections.Clear();
-            waitingConnections.Clear();
-            roomDecks.Clear();
-            matchControllers.Clear();
-            playerIndex = 1;
-            localPlayerRoom = Guid.Empty;
-            localJoinedRoom = Guid.Empty;
-            selectedRoom = Guid.Empty;
+            _reconnectService = new(_serverRepo, this, () => SendRoomList());
+
+            _lobbyManager.Initialize(_clientRepo);
         }
 
-        void ResetRoomManager()
+        internal void InitializeServerData()
         {
-            InitializeData();
+            _serverRepo.Clear();
+            playerIndex = 1;
         }
 
         #endregion
@@ -93,7 +67,7 @@ namespace CardClash
         [ServerCallback]
         internal void OnStartServer()
         {
-            InitializeData();
+            InitializeServerData();
             NetworkServer.RegisterHandler<ServerRoomMessage>(OnServerRoomMessage);
             NetworkServer.RegisterHandler<ServerDeckMessage>(OnServerDeckMessage);
             NetworkServer.RegisterHandler<SetPlayerInfoMessage>(OnSetPlayerInfo);
@@ -102,108 +76,85 @@ namespace CardClash
         [ServerCallback]
         internal void OnServerReady(NetworkConnectionToClient conn)
         {
-            waitingConnections.Add(conn);
-            playerInfos.Add(conn, new()
+            _serverRepo.WaitingConnections.Add(conn);
+
+            if (!_serverRepo.PlayerInfos.ContainsKey(conn))
             {
-                playerId = playerIndex,
-                isReady = false,
-            });
+                _serverRepo.PlayerInfos.Add(conn, new()
+                {
+                    playerId = playerIndex,
+                    isReady = false,
+                });
+            }
+
             SendRoomList();
         }
 
         [ServerCallback]
         internal IEnumerator OnServerDisconnect(NetworkConnectionToClient conn)
         {
-            if (playerInfos.TryGetValue(conn, out PlayerRoomInfo matchInfo) 
-                && matchControllers.TryGetValue(matchInfo.roomCode, out var matchController))
+            _serverRepo.PlayerInfos.TryGetValue(conn, out PlayerRoomInfo matchInfo);
+
+            var roomCode = matchInfo.roomCode;
+
+            // Match already started -> unchanged existing behavior
+            if (_serverRepo.MatchControllers.TryGetValue(roomCode, out var matchController))
             {
                 if (matchInfo.isOwner)
                     EndMatchForRoom(matchController);
                 else
                     matchController.HandlePlayerQuit(conn);
             }
-
-            // If player created a room, remove it
-            if (playerRooms.TryGetValue(conn, out var roomCode))
+            else if (_serverRepo.PlayerRooms.TryGetValue(conn, out var ownedRoomCode))
             {
-                playerRooms.Remove(conn);
-                openRooms.Remove(roomCode);
+                // Owner disconnecting from a still-open (not started) room
+                _serverRepo.PlayerRooms.Remove(conn);
+                _serverRepo.OpenRooms.Remove(ownedRoomCode);
 
-                // Notify all players in that room
-                if (roomConnections.TryGetValue(roomCode, out var connections))
+                if (_serverRepo.RoomConnections.TryGetValue(ownedRoomCode, out var connections))
                 {
-                    foreach (NetworkConnectionToClient playerConn in connections)
+                    foreach (var playerConn in connections.ToList())
                     {
-                        var playerInfo = playerInfos[playerConn];
-                        playerInfo.isReady = false;
-                        playerInfo.roomCode = Guid.Empty;
-                        playerInfos[playerConn] = playerInfo;
-                        playerConn.Send(new ClientRoomMessage
-                        {
-                            clientRoomOperation = ClientRoomOperation.Left
-                        });
+                        if (playerConn == conn) continue;
+                        var info = _serverRepo.PlayerInfos[playerConn];
+                        info.isReady = false;
+                        info.roomCode = Guid.Empty;
+                        _serverRepo.PlayerInfos[playerConn] = info;
+                        playerConn.Send(new ClientRoomMessage { clientRoomOperation = ClientRoomOperation.Left });
                     }
+                    _serverRepo.RoomConnections.Remove(ownedRoomCode);
                 }
             }
 
-            // Remove player from all rooms
-            foreach (var kvp in roomConnections)
-                kvp.Value.Remove(conn);
-
-            // Update room if player was in one
-            if (playerInfos.TryGetValue(conn, out PlayerRoomInfo info))
+            else if (roomCode != Guid.Empty)
             {
-                if (openRooms.TryGetValue(info.roomCode, out RoomInfo roomInfo))
-                {
-                    roomInfo.playerCount--;
-                    openRooms[info.roomCode] = roomInfo;
-                }
-
-                // Notify remaining players
-                if (roomConnections.TryGetValue(info.roomCode, out var connections2))
-                {
-                    PlayerRoomInfo[] playerInfo = connections2
-                        .Where(c => playerInfos.ContainsKey(c))
-                        .Select(playerConn => playerInfos[playerConn])
-                        .ToArray();
-
-                    foreach (NetworkConnectionToClient playerConn in connections2)
-                        if (playerConn != conn)
-                            playerConn.Send(new ClientRoomMessage
-                            {
-                                clientRoomOperation = ClientRoomOperation.ListUpdated,
-                                playerInfo = playerInfo
-                            });
-                }
+                _reconnectService.HandleDisconnect(conn, matchInfo, roomCode);
             }
 
-            playerInfos.Remove(conn);
-            waitingConnections.Remove(conn);
+            _serverRepo.PlayerInfos.Remove(conn);
+            _serverRepo.WaitingConnections.Remove(conn);
             SendRoomList();
 
             yield return null;
         }
 
         [ServerCallback]
-        internal void OnStopServer()
+        private void OnSetPlayerInfo(NetworkConnectionToClient conn, SetPlayerInfoMessage msg)
         {
-            ResetRoomManager();
+            var username = msg.Username.Trim();
+
+            if (_reconnectService.TryReconnect(conn, msg.SessionId, username))
+                return;
+
+            var info = _serverRepo.PlayerInfos.TryGetValue(conn, out var existing) ? 
+                existing : new() { playerId = playerIndex += 1 };
+            info.playerName = username;
+            info.sessionId = msg.SessionId;
+            _serverRepo.PlayerInfos[conn] = info;
         }
 
         [ServerCallback]
-        private void OnSetPlayerInfo(NetworkConnectionToClient conn, SetPlayerInfoMessage msg)
-        {
-            var username = msg.Username?.Trim();
-
-            if (string.IsNullOrWhiteSpace(username))
-                username = conn.connectionId.ToString();
-
-            if (playerInfos.TryGetValue(conn, out var info))
-            {
-                info.playerName = username;
-                playerInfos[conn] = info;
-            }
-        }
+        internal void OnStopServer() => InitializeServerData();
 
         #endregion
 
@@ -214,9 +165,9 @@ namespace CardClash
         {
             Card.PopulateCardSprites();
 
-            InitializeData();
+            _clientRepo.Clear();
 
-            _lobbyManager.UpdateRoomList(openRooms);
+            _lobbyManager.UpdateRoomList(_clientRepo.OpenRooms);
 
             NetworkClient.RegisterHandler<ClientRoomMessage>(OnClientRoomMessage);
             NetworkClient.RegisterHandler<ClientDeckMessage>(OnClientDeckMessage);
@@ -227,19 +178,26 @@ namespace CardClash
         {
             var username = PlayerPrefs.GetString("UserName", string.Empty);
 
-            NetworkClient.Send(new SetPlayerInfoMessage { Username = username });
+            var sessionId = PlayerPrefs.GetString("SessionId", string.Empty);
+            if (string.IsNullOrEmpty(sessionId))
+            {
+                sessionId = Guid.NewGuid().ToString();
+                PlayerPrefs.SetString("SessionId", sessionId);
+            }
+
+            NetworkClient.Send(new SetPlayerInfoMessage { Username = username, SessionId = sessionId });
         }
 
         [ClientCallback]
         internal void OnClientDisconnect()
         {
-            InitializeData();
+            _clientRepo.Clear();
         }
 
         [ClientCallback]
         internal void OnStopClient()
         {
-            ResetRoomManager();
+            _clientRepo.Clear();
         }
 
         #endregion
@@ -283,11 +241,11 @@ namespace CardClash
             // Find which room this connection's player is in via NetworkMatch
             if (conn.identity == null) return false;
 
-            if (!conn.identity.TryGetComponent<NetworkMatch>(out var networkMatch)) 
+            if (!conn.identity.TryGetComponent<NetworkMatch>(out var networkMatch))
                 return false;
 
             Guid roomCode = networkMatch.matchId;
-            return matchControllers.TryGetValue(roomCode, out controller);
+            return _serverRepo.MatchControllers.TryGetValue(roomCode, out controller);
         }
 
         [ServerCallback]
@@ -334,12 +292,12 @@ namespace CardClash
         [ServerCallback]
         void OnServerCreateRoom(NetworkConnectionToClient conn, int maxPlayers, int startingCards)
         {
-            if (playerRooms.ContainsKey(conn)) return;
+            if (_serverRepo.PlayerRooms.ContainsKey(conn)) return;
 
             var newRoomCode = Guid.NewGuid();
-            roomConnections.Add(newRoomCode, new HashSet<NetworkConnectionToClient> { conn });
-            playerRooms.Add(conn, newRoomCode);
-            openRooms.Add(newRoomCode, new()
+            _serverRepo.RoomConnections.Add(newRoomCode, new HashSet<NetworkConnectionToClient> { conn });
+            _serverRepo.PlayerRooms.Add(conn, newRoomCode);
+            _serverRepo.OpenRooms.Add(newRoomCode, new()
             {
                 roomCode = newRoomCode,
                 maxPlayers = maxPlayers,
@@ -348,14 +306,14 @@ namespace CardClash
                 isStarted = false
             });
 
-            var playerInfo = playerInfos[conn];
+            var playerInfo = _serverRepo.PlayerInfos[conn];
             playerInfo.isReady = false;
             playerInfo.isOwner = true;
             playerInfo.roomCode = newRoomCode;
-            playerInfos[conn] = playerInfo;
+            _serverRepo.PlayerInfos[conn] = playerInfo;
 
-            PlayerRoomInfo[] info = roomConnections[newRoomCode]
-                .Select(playerConn => playerInfos[playerConn])
+            PlayerRoomInfo[] info = _serverRepo.RoomConnections[newRoomCode]
+                .Select(playerConn => _serverRepo.PlayerInfos[playerConn])
                 .ToArray();
 
             conn.Send(new ClientRoomMessage
@@ -372,7 +330,7 @@ namespace CardClash
         [ServerCallback]
         void OnServerJoinRoom(NetworkConnectionToClient conn, Guid roomCode)
         {
-            if (!roomConnections.ContainsKey(roomCode) || !openRooms.ContainsKey(roomCode))
+            if (!_serverRepo.RoomConnections.ContainsKey(roomCode) || !_serverRepo.OpenRooms.ContainsKey(roomCode))
             {
                 conn.Send(new ClientRoomMessage
                 {
@@ -382,7 +340,7 @@ namespace CardClash
                 return;
             }
 
-            RoomInfo roomInfo = openRooms[roomCode];
+            RoomInfo roomInfo = _serverRepo.OpenRooms[roomCode];
             if (roomInfo.playerCount >= roomInfo.maxPlayers)
             {
                 conn.Send(new ClientRoomMessage
@@ -394,17 +352,17 @@ namespace CardClash
             }
 
             roomInfo.playerCount++;
-            openRooms[roomCode] = roomInfo;
-            roomConnections[roomCode].Add(conn);
+            _serverRepo.OpenRooms[roomCode] = roomInfo;
+            _serverRepo.RoomConnections[roomCode].Add(conn);
 
-            var playerInfo = playerInfos[conn];
+            var playerInfo = _serverRepo.PlayerInfos[conn];
             playerInfo.isReady = false;
             playerInfo.roomCode = roomCode;
             playerInfo.isOwner = false;
-            playerInfos[conn] = playerInfo;
+            _serverRepo.PlayerInfos[conn] = playerInfo;
 
-            PlayerRoomInfo[] info = roomConnections[roomCode]
-                .Select(playerConn => playerInfos[playerConn])
+            PlayerRoomInfo[] info = _serverRepo.RoomConnections[roomCode]
+                .Select(playerConn => _serverRepo.PlayerInfos[playerConn])
                 .ToArray();
 
             SendRoomList();
@@ -416,7 +374,7 @@ namespace CardClash
                 playerInfo = info
             });
 
-            foreach (NetworkConnectionToClient playerConn in roomConnections[roomCode])
+            foreach (NetworkConnectionToClient playerConn in _serverRepo.RoomConnections[roomCode])
                 playerConn.Send(new ClientRoomMessage
                 {
                     clientRoomOperation = ClientRoomOperation.UpdateRoom,
@@ -428,36 +386,41 @@ namespace CardClash
         [ServerCallback]
         void OnServerLeaveRoom(NetworkConnectionToClient conn)
         {
-            if (!playerInfos.TryGetValue(conn, out PlayerRoomInfo playerInfo))
+            if (!_serverRepo.PlayerInfos.TryGetValue(conn, out PlayerRoomInfo playerInfo))
                 return;
 
             var roomCode = playerInfo.roomCode;
 
-            if (!roomConnections.ContainsKey(roomCode))
+            if (!_serverRepo.RoomConnections.ContainsKey(roomCode))
                 return;
 
-            roomConnections[roomCode].Remove(conn);
+            conn.Send(new ClientRoomMessage
+            {
+                clientRoomOperation = ClientRoomOperation.Left
+            });
+
+            _serverRepo.RoomConnections[roomCode].Remove(conn);
             playerInfo.isReady = false;
             playerInfo.roomCode = Guid.Empty;
-            playerInfos[conn] = playerInfo;
+            _serverRepo.PlayerInfos[conn] = playerInfo;
 
-            if (roomConnections[roomCode].Count == 0)
+            if (_serverRepo.RoomConnections[roomCode].Count == 0)
             {
-                roomConnections.Remove(roomCode);
-                openRooms.Remove(roomCode);
+                _serverRepo.RoomConnections.Remove(roomCode);
+                _serverRepo.OpenRooms.Remove(roomCode);
                 Debug.Log($"RoomManager: Room {roomCode} closed (empty)");
             }
             else
             {
-                RoomInfo roomInfo = openRooms[roomCode];
-                roomInfo.playerCount = roomConnections[roomCode].Count;
-                openRooms[roomCode] = roomInfo;
+                RoomInfo roomInfo = _serverRepo.OpenRooms[roomCode];
+                roomInfo.playerCount = _serverRepo.RoomConnections[roomCode].Count;
+                _serverRepo.OpenRooms[roomCode] = roomInfo;
 
-                PlayerRoomInfo[] playerRoomInfo = roomConnections[roomCode]
-                    .Select(playerConn => playerInfos[playerConn])
+                PlayerRoomInfo[] playerRoomInfo = _serverRepo.RoomConnections[roomCode]
+                    .Select(playerConn => _serverRepo.PlayerInfos[playerConn])
                     .ToArray();
 
-                foreach (NetworkConnectionToClient playerConn in roomConnections[roomCode])
+                foreach (NetworkConnectionToClient playerConn in _serverRepo.RoomConnections[roomCode])
                     playerConn.Send(new ClientRoomMessage
                     {
                         clientRoomOperation = ClientRoomOperation.UpdateRoom,
@@ -468,25 +431,24 @@ namespace CardClash
             SendRoomList();
         }
 
-
         [ServerCallback]
         void OnServerCancelRoom(NetworkConnectionToClient conn)
         {
-            if (!playerRooms.ContainsKey(conn)) return;
+            if (!_serverRepo.PlayerRooms.ContainsKey(conn)) return;
 
             conn.Send(new ClientRoomMessage
             {
                 clientRoomOperation = ClientRoomOperation.Cancelled,
             });
 
-            if (playerRooms.TryGetValue(conn, out var roomCode))
+            if (_serverRepo.PlayerRooms.TryGetValue(conn, out var roomCode))
             {
-                playerRooms.Remove(conn);
-                openRooms.Remove(roomCode);
+                _serverRepo.PlayerRooms.Remove(conn);
+                _serverRepo.OpenRooms.Remove(roomCode);
 
-                foreach (var item in roomConnections[roomCode])
+                foreach (var item in _serverRepo.RoomConnections[roomCode])
                 {
-                    var playerInfo = playerInfos[item];
+                    var playerInfo = _serverRepo.PlayerInfos[item];
                     playerInfo.isReady = false;
                     playerInfo.roomCode = Guid.Empty;
                     item.Send(new ClientRoomMessage
@@ -502,17 +464,17 @@ namespace CardClash
         [ServerCallback]
         void OnServerPlayerReady(NetworkConnectionToClient conn, Guid roomCode)
         {
-            var playerInfo = playerInfos[conn];
+            var playerInfo = _serverRepo.PlayerInfos[conn];
 
             playerInfo.isReady = !playerInfo.isReady;
-            playerInfos[conn] = playerInfo;
+            _serverRepo.PlayerInfos[conn] = playerInfo;
 
-            HashSet<NetworkConnectionToClient> connections = roomConnections[roomCode];
-            var info = connections.Select(playerConn => playerInfos[playerConn]).ToArray();
+            HashSet<NetworkConnectionToClient> connections = _serverRepo.RoomConnections[roomCode];
+            var info = connections.Select(playerConn => _serverRepo.PlayerInfos[playerConn]).ToArray();
 
-            var maxPlayers = openRooms[roomCode].maxPlayers;
+            var maxPlayers = _serverRepo.OpenRooms[roomCode].maxPlayers;
 
-            foreach (var item in roomConnections[roomCode])
+            foreach (var item in _serverRepo.RoomConnections[roomCode])
             {
                 item.Send(new ClientRoomMessage
                 {
@@ -526,10 +488,10 @@ namespace CardClash
         [ServerCallback]
         private void OnServerStartGame(NetworkConnectionToClient conn)
         {
-            if(!playerRooms.TryGetValue(conn, out var roomCode))
+            if (!_serverRepo.PlayerRooms.TryGetValue(conn, out var roomCode))
                 return;
 
-            var startingCards = openRooms.TryGetValue(roomCode, out var roomInfo) ? roomInfo.startingCards : 0;
+            var startingCards = _serverRepo.OpenRooms.TryGetValue(roomCode, out var roomInfo) ? roomInfo.startingCards : 0;
 
             var matchController = Instantiate(matchControllerPrefab);
             if (matchController.TryGetComponent<NetworkMatch>(out var networkMatch))
@@ -537,13 +499,13 @@ namespace CardClash
                 networkMatch.matchId = roomCode;
             }
             NetworkServer.Spawn(matchController.gameObject);
-            matchControllers[roomCode] = matchController;
+            _serverRepo.MatchControllers[roomCode] = matchController;
 
             CardDeck deck = new();
             deck.BuildDeck();
-            roomDecks[roomCode] = deck;
+            _serverRepo.RoomDecks[roomCode] = deck;
 
-            foreach (NetworkConnectionToClient playerConn in roomConnections[roomCode])
+            foreach (NetworkConnectionToClient playerConn in _serverRepo.RoomConnections[roomCode])
             {
                 playerConn.Send(new ClientRoomMessage
                 {
@@ -567,18 +529,18 @@ namespace CardClash
                 else
                     NetworkServer.AddPlayerForConnection(playerConn, player);
 
-                matchController.AddPlayer(playerConn, playerInfos[playerConn]);
+                matchController.AddPlayer(playerConn, _serverRepo.PlayerInfos[playerConn]);
 
-                var playerInfo = playerInfos[playerConn];
+                var playerInfo = _serverRepo.PlayerInfos[playerConn];
                 playerInfo.isReady = false;
-                playerInfos[playerConn] = playerInfo;
+                _serverRepo.PlayerInfos[playerConn] = playerInfo;
             }
 
             matchController.StartGame(deck, startingCards);
 
-            playerRooms.Remove(conn);
-            openRooms.Remove(roomCode);
-            roomConnections.Remove(roomCode);
+            _serverRepo.PlayerRooms.Remove(conn);
+            _serverRepo.OpenRooms.Remove(roomCode);
+            _serverRepo.RoomConnections.Remove(roomCode);
 
             SendRoomList();
         }
@@ -586,7 +548,9 @@ namespace CardClash
         [ServerCallback]
         private void HandleQuitMatch(NetworkConnectionToClient conn, CardGameController controller)
         {
-            var isOwner = playerInfos.TryGetValue(conn, out var playerInfo) && playerInfo.isOwner;
+            var isOwner = _serverRepo.PlayerInfos.TryGetValue(conn, out var playerInfo) && playerInfo.isOwner;
+
+            Debug.Log($"[Server] HandleQuitMatch from conn {conn.connectionId}, netId={conn.identity?.netId}, isOwner={isOwner}");
 
             if (isOwner)
                 EndMatchForRoom(controller);
@@ -603,10 +567,10 @@ namespace CardClash
 
             Guid roomCode = networkMatch.matchId;
 
-            controller.EndMatch(); 
+            controller.EndMatch();
 
-            matchControllers.Remove(roomCode);
-            roomDecks.Remove(roomCode);
+            _serverRepo.MatchControllers.Remove(roomCode);
+            _serverRepo.RoomDecks.Remove(roomCode);
 
             if (controller != null)
                 NetworkServer.Destroy(controller.gameObject);
@@ -638,16 +602,14 @@ namespace CardClash
                     break;
 
                 case ClientRoomOperation.Left:
+                    Debug.Log("[Client] Received Left message, calling OnRoomLeft()");
                     OnRoomLeft();
                     break;
 
                 case ClientRoomOperation.ListUpdated:
-                    openRooms.Clear();
+                    _clientRepo.SetRoomList(msg.roomInfo);
 
-                    foreach (var item in msg.roomInfo)
-                        openRooms.Add(item.roomCode, item);
-
-                    _lobbyManager.UpdateRoomList(openRooms);
+                    _lobbyManager.UpdateRoomList(_clientRepo.OpenRooms);
                     break;
 
                 case ClientRoomOperation.UpdateRoom:
@@ -663,7 +625,7 @@ namespace CardClash
                     break;
 
                 case ClientRoomOperation.MatchEndedByTimeout:
-                    // TO DO...
+                    // TODO
                     break;
 
                 case ClientRoomOperation.Error:
@@ -675,7 +637,7 @@ namespace CardClash
         [ClientCallback]
         void OnClientDeckMessage(ClientDeckMessage msg)
         {
-            if(CardGameController.Instance is not { } gc)
+            if (CardGameController.Instance is not { } gc)
                 return;
 
             switch (msg.clientDeckOperation)
@@ -685,11 +647,12 @@ namespace CardClash
                     break;
 
                 case ClientDeckOperation.CardPlayed:
+                    gc.RemoveHandCard(msg.TopDiscardCard.Id);
                     gc.RefreshHandInteractability(false);
                     break;
 
                 case ClientDeckOperation.CardDrawn:
-                    gc.ShowDealtCards(msg.Cards, false);  
+                    gc.ShowDealtCards(msg.Cards, false);
                     gc.OnDrawnCardReceived(msg.CanPlayDrawnCard, msg.Cards[0]);
                     break;
 
@@ -709,29 +672,29 @@ namespace CardClash
 
         #region Button Callbacks (UI)
 
-        /// <summary>
-        /// Called when a room is selected in the list
-        /// </summary>
         [ClientCallback]
         public void SelectRoom(Guid roomId)
         {
             if (roomId == Guid.Empty)
             {
-                selectedRoom = Guid.Empty;
-                joinButton.interactable = false;
-            }
-            else
-            {
-                if (!openRooms.ContainsKey(roomId))
-                {
-                    joinButton.interactable = false;
-                    return;
-                }
+                _clientRepo.ClearSelectedRoom();
 
-                selectedRoom = roomId;
-                var roomInfo = openRooms[roomId];
-                joinButton.interactable = roomInfo.playerCount < roomInfo.maxPlayers;
+                joinButton.interactable = false;
+                return;
             }
+
+            if (!_clientRepo.OpenRooms.ContainsKey(roomId))
+            {
+                joinButton.interactable = false;
+                return;
+            }
+
+            _clientRepo.SelectRoom(roomId);
+
+            var roomInfo = _clientRepo.OpenRooms[roomId];
+
+            joinButton.interactable =
+                roomInfo.playerCount < roomInfo.maxPlayers;
         }
 
         #endregion
@@ -740,27 +703,36 @@ namespace CardClash
 
         public void OnRoomCreated(Guid roomId)
         {
-            localPlayerRoom = roomId;
+            _clientRepo.SetRoom(roomId, true);
+
             _uiManager.SetState(ScreenType.Room);
         }
 
         [ClientCallback]
         public void OnRoomJoined(Guid roomId)
         {
-            localJoinedRoom = roomId;
-            selectedRoom = Guid.Empty;
+            _clientRepo.SetRoom(roomId, false);
+            _clientRepo.ClearSelectedRoom();
+
             _uiManager.SetState(ScreenType.Room);
         }
 
 
         public void OnRoomLeft()
         {
-            localPlayerRoom = Guid.Empty;
-            localJoinedRoom = Guid.Empty;
+            Debug.Log("[Client] OnRoomLeft called - returning to lobby");
+
+            if (CardGameController.Instance != null)
+            {
+                Debug.Log("[Client] Destroying CardGameController instance");
+                Destroy(CardGameController.Instance.gameObject);
+            }
+
+            _clientRepo.ClearRoom();
 
             _uiManager.SetState(ScreenType.Lobby);
 
-            _lobbyManager.UpdateRoomList(openRooms);
+            _lobbyManager.UpdateRoomList(_clientRepo.OpenRooms);
         }
 
         #endregion
@@ -771,22 +743,22 @@ namespace CardClash
         void SendRoomList(NetworkConnectionToClient conn = null)
         {
             if (conn != null)
-            { 
+            {
                 conn.Send(new ClientRoomMessage
                 {
                     clientRoomOperation = ClientRoomOperation.ListUpdated,
-                    roomInfo = openRooms.Values.ToArray()
+                    roomInfo = _serverRepo.OpenRooms.Values.ToArray()
                 });
             }
 
             else
             {
-                foreach (var item in waitingConnections)
+                foreach (var item in _serverRepo.WaitingConnections)
                 {
                     item.Send(new ClientRoomMessage
                     {
                         clientRoomOperation = ClientRoomOperation.ListUpdated,
-                        roomInfo = openRooms.Values.ToArray()
+                        roomInfo = _serverRepo.OpenRooms.Values.ToArray()
                     });
                 }
             }

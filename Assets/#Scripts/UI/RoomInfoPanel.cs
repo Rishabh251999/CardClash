@@ -9,14 +9,21 @@ namespace CardClash
     public class RoomInfoPanel : MonoBehaviour
     {
         #region Constants
-
-        private const int MinPlayers = 3;
+        private const int MinPlayers = 2;
         private const int MaxPlayers = 8;
         private const int DefaultPlayers = 4;
 
         private const int MinStartingCards = 3;
         private const int MaxStartingCards = 7;
         private const int DefaultStartingCards = 4;
+
+        #endregion
+
+        #region Script References
+
+        [Space(5f)]
+
+        [SerializeField] private UIManager _uiManager;
 
         #endregion
 
@@ -28,6 +35,7 @@ namespace CardClash
 
         [Space(2.5f)]
 
+        [SerializeField] private Button _backButton;
         [SerializeField] private Button _createButton;
 
         #endregion
@@ -42,7 +50,14 @@ namespace CardClash
 
         private void Start()
         {
+            _backButton.onClick.AddListener(OnBackButtonClicked);
             _createButton.onClick.AddListener(OnCreateButtonClicked);
+        }
+
+        private void OnDestroy()
+        {
+            _backButton.onClick.RemoveListener(OnBackButtonClicked);
+            _createButton.onClick.RemoveListener(OnCreateButtonClicked);
         }
 
         private void PopulateDropdown(TMP_Dropdown dropdown, int min, int max, int defaultValue)
@@ -70,6 +85,8 @@ namespace CardClash
             dropdown.value = defaultIndex;
             dropdown.RefreshShownValue();
         }
+
+        private void OnBackButtonClicked() => _uiManager.SetState(ScreenType.Lobby, false);
 
         private void OnCreateButtonClicked()
         {

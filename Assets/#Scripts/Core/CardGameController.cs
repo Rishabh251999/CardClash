@@ -2,6 +2,7 @@ using Mirror;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -68,7 +69,6 @@ namespace CardClash
         [SerializeField] private TextMeshProUGUI _countdownText;
         [SerializeField] private TextMeshProUGUI _gameTimerText;
         [SerializeField] private TextMeshProUGUI _drawPileCountText;
-        [SerializeField] private TextMeshProUGUI _currentPlayerNameText;
 
         [Space(2.5f)]
 
@@ -77,6 +77,7 @@ namespace CardClash
         [SerializeField] private CanvasGroup _colorPickerPanel;
 
         private Button _cardDrawButton;
+
         private CanvasGroup _canvasGroup;
         private CanvasGroup _passButtonCanvasGroup;
 
@@ -101,6 +102,7 @@ namespace CardClash
         [Space(5f)]
         [Header("Transform References")]
 
+        [SerializeField] private Transform _playerGUIsParent;
         [SerializeField] private Transform _cardTargetTransform;
 
         private Transform _handContainer;
@@ -123,12 +125,17 @@ namespace CardClash
 
 
         #region Runtime Collections
+        private readonly List<Card> _handCards = new();
 
         private readonly List<GamePlayerGUI> _playerGUIs = new();
+
+        private readonly HashSet<uint> _playersWhoDrewThisTurn = new();
 
         private readonly Dictionary<uint, int> _netIdToGuiIndex = new();
 
         private readonly SyncDictionary<uint, PlayerGameInfo> _playerData = new();
+
+
 
         private int _cardPerPlayer;
 
@@ -147,12 +154,14 @@ namespace CardClash
 
         private Coroutine _countdownCoroutine;
         private Coroutine _gameTimerCoroutine;
-        private Coroutine _turnTimerCoroutine; 
+        private Coroutine _turnTimerCoroutine;
         private Coroutine _notificationHideCoroutine;
 
         private bool _isTimerRunningLocally;
         private bool _isGameRunningLocally;
         private bool _awaitingDrawnCardDecision;
+
+        private int _lastDisplayedGameSecond = -1;
 
         #endregion
 
@@ -186,12 +195,11 @@ namespace CardClash
 
         private void Awake()
         {
-            _playerData.OnChange += OnPlayerDataChanged;
-
             _canvasGroup = _canvas.GetComponent<CanvasGroup>();
             _cardDrawButton = _cardDrawGameobject.GetComponent<Button>();
-            _handContainer = _hand.transform;
             _passButtonCanvasGroup = _passTurnButton.GetComponent<CanvasGroup>();
+
+            _handContainer = _hand.transform;
 
             _topDiscardImage.color = new(1, 1, 1, 0);
         }
@@ -212,34 +220,49 @@ namespace CardClash
 
         private void Update()
         {
+            UpdateTurnTimerUI();
+            UpdateGameTimerUI();
+        }
+
+        private void UpdateTurnTimerUI()
+        {
             if (!_isTimerRunningLocally || _turnTimerRingImage == null)
                 return;
 
-            var turnTimeElapsed = NetworkTime.time - _turnStartTime;
+            var elapsed = NetworkTime.time - _turnStartTime;
 
             var normalized = _turnTimeLimit > 0f
-                ? 1f - (float)(turnTimeElapsed / _turnTimeLimit)
+                ? 1f - (float)(elapsed / _turnTimeLimit)
                 : 0f;
 
             _turnTimerRingImage.fillAmount = Mathf.Clamp01(normalized);
 
             if (normalized <= 0f)
                 _isTimerRunningLocally = false;
+        }
 
-            if (_isGameRunningLocally && _gameTimerText != null)
+        private void UpdateGameTimerUI()
+        {
+            if (!_isGameRunningLocally || _gameTimerText == null)
+                return;
+
+            var elapsed = NetworkTime.time - _gameStartTime;
+            var remaining = Mathf.Max(0f, _gameTimeLimit - (float)elapsed);
+
+            var totalSeconds = Mathf.FloorToInt(remaining);
+
+            if (totalSeconds != _lastDisplayedGameSecond)
             {
-                var gameTimeElapsed = NetworkTime.time - _gameStartTime;
+                _lastDisplayedGameSecond = totalSeconds;
 
-                var remaining = Mathf.Max(0f, _gameTimeLimit - (float)gameTimeElapsed);
-
-                var minutes = Mathf.FloorToInt(remaining / 60f);
-                var seconds = Mathf.FloorToInt(remaining % 60f);
+                var minutes = totalSeconds / 60;
+                var seconds = totalSeconds % 60;
 
                 _gameTimerText.SetText($"{minutes:00}:{seconds:00}");
-
-                if (remaining <= 0f)
-                    _isGameRunningLocally = false;
             }
+
+            if (remaining <= 0f)
+                _isGameRunningLocally = false;
         }
 
         private void SetCanvasGroupVisible(CanvasGroup group, bool visible)
@@ -261,15 +284,15 @@ namespace CardClash
         {
             Instance = this;
 
+            _playerData.OnChange += OnPlayerDataChanged;
+
             _canvasGroup.alpha = 1f;
             _canvasGroup.interactable = true;
             _canvasGroup.blocksRaycasts = true;
 
             _quitButton.onClick.AddListener(OnClickQuitButton);
-
-            _pauseButton.onClick.AddListener(() => OpenAndClosePausePanel(true));
-
-            _resumeButton.onClick.AddListener(() => OpenAndClosePausePanel(false));
+            _pauseButton.onClick.AddListener(OnPauseButtonClicked);
+            _resumeButton.onClick.AddListener(OnResumeButtonClicked);
 
             _cardDrawButton.onClick.AddListener(OnDrawButtonClicked);
             _passTurnButton.onClick.AddListener(OnPassButtonClicked);
@@ -290,6 +313,8 @@ namespace CardClash
 
         public override void OnStopClient()
         {
+            _playerData.OnChange -= OnPlayerDataChanged;
+
             if (_countdownCoroutine != null)
             {
                 StopCoroutine(_countdownCoroutine);
@@ -306,10 +331,8 @@ namespace CardClash
             _blueColorButton.onClick.RemoveListener(OnBlueColorClicked);
 
             _quitButton.onClick.RemoveListener(OnClickQuitButton);
-
-            _pauseButton.onClick.RemoveListener(() => OpenAndClosePausePanel(true));
-
-            _resumeButton.onClick.RemoveListener(() => OpenAndClosePausePanel(false));
+            _pauseButton.onClick.RemoveListener(OnPauseButtonClicked);
+            _resumeButton.onClick.RemoveListener(OnResumeButtonClicked);
 
             Instance = null;
         }
@@ -321,6 +344,15 @@ namespace CardClash
 
         private void OnClickQuitButton()
         {
+            foreach (var gui in _playerGUIs)
+            {
+                if (gui != null)
+                    Destroy(gui.gameObject);
+            }
+
+            _playerGUIs.Clear();
+            _netIdToGuiIndex.Clear();
+
             NetworkClient.Send(new ServerDeckMessage
             {
                 serverDeckOperation = ServerDeckOperation.QuitMatch
@@ -330,6 +362,16 @@ namespace CardClash
         private void OpenAndClosePausePanel(bool value)
         {
             SetCanvasGroupVisible(_pausePanel, value);
+        }
+
+        private void OnPauseButtonClicked()
+        {
+            OpenAndClosePausePanel(true);
+        }
+
+        private void OnResumeButtonClicked()
+        {
+            OpenAndClosePausePanel(false);
         }
 
         #endregion
@@ -471,53 +513,75 @@ namespace CardClash
             _playerData[netId] = data;
         }
 
+        [Server]
         public void HandlePlayerQuit(NetworkConnectionToClient conn)
         {
+            Debug.Log($"[Server] HandlePlayerQuit START for netId {conn?.identity?.netId}");
+
+            if (conn == null || conn.identity == null)
+            {
+                Debug.LogWarning("[Server] HandlePlayerQuit: conn or identity is null.");
+                return;
+            }
+
             var netId = conn.identity.netId;
 
             if (!_playerRegistry.Players.ContainsKey(netId))
+            {
+                Debug.LogWarning($"[Server] Player {netId} not in registry.");
                 return;
+            }
 
-            var quittingPlayerName = _playerRegistry.Players[netId].RoomInfo.playerName;
+            var quittingPlayerName = _playerRegistry.Players[netId]?.RoomInfo.playerName ?? "Unknown";
+            Debug.Log($"[Server] Quitting player: {quittingPlayerName}");
 
-            var wasCurrentPlayer = _turnState.RemovePlayer(netId);
+            var wasCurrentPlayer = _turnState?.RemovePlayer(netId) ?? false;
 
             _playerRegistry.RemovePlayer(netId);
             _playerData.Remove(netId);
+            _playersWhoDrewThisTurn.Remove(netId);
+            _netIdToGuiIndex.Remove(netId);
+
+            Debug.Log($"[Server] Player data removed");
 
             if (wasCurrentPlayer && _turnState.PlayerCount > 0)
             {
                 _currentPlayerNetId = _turnState.CurrentPlayerNetId;
-
                 _turnStartTime = NetworkTime.time;
+                Debug.Log($"[Server] Turn advanced");
             }
 
-            // Tell the quitting client to go back to the lobby.
-            conn.Send(new ClientRoomMessage
-            {
-                clientRoomOperation = ClientRoomOperation.Left
-            });
+            Debug.Log($"[Server] Broadcasting RPC for netId {netId}");
+            RpcPlayerQuit(netId);
+            Debug.Log($"[Server] RPC sent");
 
-            // Remove their player object without disconnecting them.
             if (conn.identity != null)
             {
-                NetworkServer.RemovePlayerForConnection(conn, RemovePlayerOptions.Destroy);
-            }
-
-            foreach (var entry in _playerRegistry.Players.Values)
-            {
-                entry.Conn.Send(new ClientDeckMessage
-                {
-                    clientDeckOperation = ClientDeckOperation.PlayerQuit
-                });
+                Debug.Log($"[Server] About to destroy player {netId}");
+                NetworkServer.Destroy(conn.identity.gameObject);
+                Debug.Log($"[Server] Player {netId} destroyed");
             }
 
             ShowNotification("Player left", quittingPlayerName, Color.white);
+            Debug.Log($"[Server] Notification shown");
 
             if (_turnState.PlayerCount <= 1)
             {
-                //TO DO...
+                Debug.Log($"[Server] Only {_turnState.PlayerCount} player(s) left, ending match");
+                EndMatch();
+                return;
             }
+
+            Debug.Log($"[Server] HandlePlayerQuit END");
+        }
+
+        [ClientRpc]
+        private void RpcPlayerQuit(uint netId)
+        {
+            if (this == null || !gameObject.activeInHierarchy)
+                return;
+
+            Debug.Log($"[Client] RpcPlayerQuit received for netId {netId}");
         }
 
         [Server]
@@ -564,6 +628,8 @@ namespace CardClash
         [Server]
         public void StartGame(CardDeck deck, int cardsPerPlayer)
         {
+            Debug.Log($"[SERVER] StartGame: cardsPerPlayer = {cardsPerPlayer}");
+
             _deck = deck;
 
             _cardPerPlayer = cardsPerPlayer;
@@ -651,29 +717,18 @@ namespace CardClash
         [Server]
         private void FlipFirstCard()
         {
-            GameCard firstCard;
-
-            do
+            while (_deck.TryDraw(out var firstCard))
             {
-                if (!_deck.TryDraw(out firstCard))
+                if (firstCard.Type == CardType.Number)
+                {
+                    _deck.Discard(firstCard);
+                    SetTopDiscard(firstCard, _deck.DrawPileCount + 1);
                     return;
-
-                if (firstCard.Type != CardType.Number)
-                {
-                    _deck.ReturnToDraw(firstCard);
-
-                    _deck.Shuffle();
-                }
-                else
-                {
-                    break;
                 }
 
-            } while (true);
-
-            _deck.Discard(firstCard);
-
-            SetTopDiscard(firstCard, _deck.DrawPileCount + 1);
+                _deck.ReturnToDraw(firstCard);
+                _deck.Shuffle();
+            }
         }
 
         #endregion
@@ -705,16 +760,22 @@ namespace CardClash
         [Server]
         private IEnumerator TurnTimerRoutine(uint netIdForThisTurn)
         {
-            yield return new WaitForSeconds(_turnTimeLimit );
+            var endTime = NetworkTime.time + _turnTimeLimit;
+
+            while (NetworkTime.time < endTime)
+                yield return null;
 
             if (_currentPlayerNetId != netIdForThisTurn)
                 yield break;
 
+            if (_playersWhoDrewThisTurn.Contains(netIdForThisTurn))
+            {
+                _playersWhoDrewThisTurn.Remove(netIdForThisTurn);
+                AdvanceTurn();
+                yield break;
+            }
+
             ForcePlayerDraw(netIdForThisTurn, 1);
-
-            if (_playerData.TryGetValue(netIdForThisTurn, out var data))
-                ShowNotification("Time's up!", $"{data.playerName} drew a card", Color.white);
-
             AdvanceTurn();
         }
 
@@ -771,9 +832,12 @@ namespace CardClash
         [Server]
         public void HandlePlayerCard(NetworkConnectionToClient conn, GameCard card, CardColor chosenWildColor)
         {
+            if (!IsValidPlayerAction(conn))
+                return;
+
             var netId = conn.identity.netId;
 
-            if (!IsLegalPlay(card))
+            if (!IsPlayableAgainstTop(card))
             {
                 Debug.LogWarning($"[Server] Rejected illegal play " + $"from netId {netId}: {card}");
 
@@ -814,7 +878,13 @@ namespace CardClash
                     _ => Color.white
                 };
 
-                ShowNotification("Color changes to:", chosenWildColor.ToString(), chosenColorUnityColor); 
+                ShowNotification("Color changes to:", chosenWildColor.ToString(), chosenColorUnityColor);
+            }
+
+            if (_turnTimerCoroutine is { })
+            {
+                StopCoroutine(_turnTimerCoroutine);
+                _turnTimerCoroutine = null;
             }
 
             if (!TryRemoveFromHand(netId, card))
@@ -842,6 +912,8 @@ namespace CardClash
             var wasDrawnCard = _playerRegistry.WasLastDrawnCard(netId, card.Id);
 
             _playerRegistry.ClearLastDrawnCardId(netId);
+
+            _playersWhoDrewThisTurn.Remove(netId);
 
             if (wasDrawnCard && data.cardCount == 1)
             {
@@ -884,13 +956,7 @@ namespace CardClash
         }
 
         [Server]
-        private bool IsLegalPlay(GameCard card)
-        {
-            return IsPlayableAgainstTop(card);
-        }
-
-        [Server]
-        private bool TryRemoveFromHand(uint netId,GameCard card)
+        private bool TryRemoveFromHand(uint netId, GameCard card)
         {
             return _playerRegistry.TryRemoveCard(netId, card);
         }
@@ -927,15 +993,15 @@ namespace CardClash
         {
             _syncedTopDiscard = card;
 
-            RpcShowTopDiscard(
-                card,
-                drawCount
-            );
+            RpcShowTopDiscard(card, drawCount);
         }
 
         [Server]
         public void HandleLastCardCall(NetworkConnectionToClient conn)
         {
+            if (!IsValidPlayerAction(conn))
+                return;
+
             var netId = conn.identity.netId;
 
             if (!_playerData.TryGetValue(netId, out var data))
@@ -1032,20 +1098,34 @@ namespace CardClash
 
             entry.Conn.Send(new ClientDeckMessage
             {
-                    clientDeckOperation = ClientDeckOperation.CardDrawn,
+                clientDeckOperation = ClientDeckOperation.CardDrawn,
 
-                    Cards = drawn.ToArray(),
+                Cards = drawn.ToArray(),
 
-                    DrawPileCount = _deck.DrawPileCount,
+                DrawPileCount = _deck.DrawPileCount,
 
-                    CanPlayDrawnCard = false
-                }
+                CanPlayDrawnCard = false
+            }
             );
         }
 
         [Server]
+        private bool IsValidPlayerAction(NetworkConnectionToClient conn)
+        {
+            if (conn?.identity == null)
+                return false;
+
+            return _playerRegistry.Players.ContainsKey(conn.identity.netId)
+                   && conn.identity.netId == _currentPlayerNetId;
+        }
+
+
+        [Server]
         public void HandleDrawCard(NetworkConnectionToClient conn)
         {
+            if (!IsValidPlayerAction(conn))
+                return;
+
             var netId = conn.identity.netId;
 
             if (!_deck.TryDraw(out GameCard drawnCard))
@@ -1056,6 +1136,8 @@ namespace CardClash
             }
 
             _playerRegistry.AddCardsToHand(netId, new[] { drawnCard });
+
+            _playersWhoDrewThisTurn.Add(netId);
 
             var data = _playerData[netId];
 
@@ -1070,13 +1152,13 @@ namespace CardClash
 
             conn.Send(new ClientDeckMessage
             {
-                    clientDeckOperation = ClientDeckOperation.CardDrawn,
+                clientDeckOperation = ClientDeckOperation.CardDrawn,
 
-                    Cards = new[] { drawnCard },
+                Cards = new[] { drawnCard },
 
-                    DrawPileCount =  _deck.DrawPileCount,
+                DrawPileCount = _deck.DrawPileCount,
 
-                    CanPlayDrawnCard = canPlay
+                CanPlayDrawnCard = canPlay
             });
 
             if (canPlay)
@@ -1097,12 +1179,16 @@ namespace CardClash
         [Server]
         public void HandlePassTurn(NetworkConnectionToClient conn)
         {
+            if (!IsValidPlayerAction(conn))
+                return;
+
             if (!IsCurrentPlayer(conn))
                 return;
 
             var netId = conn.identity.netId;
 
             _playerRegistry.ClearLastDrawnCardId(netId);
+            _playersWhoDrewThisTurn.Remove(netId);
 
             Debug.Log("[Server] Player passed after drawing.");
 
@@ -1190,7 +1276,7 @@ namespace CardClash
 
             _gameTimerCoroutine = null;
 
-            var finalScores = CalculateFinalScores();  
+            var finalScores = CalculateFinalScores();
 
             RpcShowGameEndScreen(finalScores.ToArray());
 
@@ -1204,7 +1290,7 @@ namespace CardClash
         {
             List<GameEndPlayerInfo> finalScores = new();
 
-            foreach(var i in _playerRegistry.AllHands)
+            foreach (var i in _playerRegistry.AllHands)
             {
                 var winnerScore = 0;
 
@@ -1227,11 +1313,10 @@ namespace CardClash
                 var playerName = _playerData.TryGetValue(i.Key, out var info) ? info.playerName : "Unknown";
 
                 finalScores.Add(new GameEndPlayerInfo
-                    {
-                        PlayerName = playerName,
-                        PlayerScore = winnerScore
-                    }
-                );
+                {
+                    PlayerName = playerName,
+                    PlayerScore = winnerScore
+                });
             }
 
             return finalScores;
@@ -1254,49 +1339,32 @@ namespace CardClash
         #region Client - Card Display
 
         [Client]
-        public void ShowDealtCards(
-            GameCard[] cards,
-            bool applyStartDelay = false)
+        public void ShowDealtCards(GameCard[] cards, bool applyStartDelay = false)
         {
-            StartCoroutine(
-                ShowDealtCardsStaggered(
-                    cards,
-                    applyStartDelay
-                        ? 0.5f
-                        : 0f
-                )
-            );
+            StartCoroutine(ShowDealtCardsStaggered(cards, applyStartDelay ? 0.5f: 0f));
         }
 
-        private IEnumerator ShowDealtCardsStaggered(
-            GameCard[] cards,
-            float startDelay)
+        private IEnumerator ShowDealtCardsStaggered(GameCard[] cards, float startDelay)
         {
             if (startDelay > 0f)
             {
-                yield return
-                    new WaitForSeconds(startDelay);
+                yield return new WaitForSeconds(startDelay);
             }
 
             var views = new List<Card>();
 
             foreach (var card in cards)
             {
-                var cardView =
-                    Instantiate(
-                        _cardPrefab,
-                        _handContainer
-                    );
+                var cardView = Instantiate(_cardPrefab, _handContainer);
 
                 cardView.Setup(card);
+
+                _handCards.Add(cardView);
 
                 views.Add(cardView);
             }
 
-            LayoutRebuilder
-                .ForceRebuildLayoutImmediate(
-                    (RectTransform)_handContainer
-                );
+            LayoutRebuilder.ForceRebuildLayoutImmediate((RectTransform)_handContainer);
 
             foreach (var cardView in views)
             {
@@ -1324,15 +1392,11 @@ namespace CardClash
         }
 
         [Client]
-        public void OnDrawnCardReceived(
-            bool canPlay,
-            GameCard drawnCard)
+        public void OnDrawnCardReceived(bool canPlay, GameCard drawnCard)
         {
             if (!canPlay)
             {
-                RefreshHandInteractability(
-                    false
-                );
+                RefreshHandInteractability(false);
 
                 return;
             }
@@ -1342,28 +1406,35 @@ namespace CardClash
             _passButtonCanvasGroup.alpha = 1f;
             _passButtonCanvasGroup.interactable = true;
 
-            foreach (Transform item
-                     in _handContainer)
+            foreach (var cardView in _handCards)
             {
-                if (!item.TryGetComponent<Card>(
-                        out var card))
+                if (!cardView.TryGetComponent<Card>(out var card))
                 {
                     continue;
                 }
 
-                var isDrawnCard =
-                    card.CardData.Id ==
-                    drawnCard.Id;
+                var isDrawnCard = card.CardData.Id == drawnCard.Id;
 
-                var isPlayable =
-                    IsValidPlay(
-                        card.CardData
-                    );
+                var isPlayable = IsValidPlay(card.CardData);
 
-                card.SetInteractable(
-                    isDrawnCard &&
-                    isPlayable
-                );
+                card.SetInteractable(isDrawnCard && isPlayable);
+            }
+        }
+
+        [Client]
+        public void RemoveHandCard(uint cardId)
+        {
+            for (int i = 0; i < _handCards.Count; i++)
+            {
+                var card = _handCards[i];
+
+                if (card.CardData.Id != cardId)
+                    continue;
+
+                _handCards.RemoveAt(i);
+                Destroy(card.gameObject);
+
+                return;
             }
         }
 
@@ -1375,6 +1446,9 @@ namespace CardClash
         [ClientRpc]
         private void RpcPlayStartCountdown()
         {
+            if (this == null || !gameObject.activeInHierarchy)
+                return;
+
             if (_countdownCoroutine != null)
             {
                 StopCoroutine(_countdownCoroutine);
@@ -1424,7 +1498,7 @@ namespace CardClash
 
             var elapsed = 0f;
 
-            while (elapsed <  _countdownStepDuration)
+            while (elapsed < _countdownStepDuration)
             {
                 elapsed += Time.deltaTime;
 
@@ -1448,6 +1522,9 @@ namespace CardClash
         [ClientRpc]
         private void RpcShowTopDiscard(GameCard card, int drawCount)
         {
+            if (this == null || !gameObject.activeInHierarchy)
+                return;
+
             _syncedTopDiscard = card;
 
             if (Card.CardSprites.TryGetValue(card.Id, out var sprite))
@@ -1477,36 +1554,21 @@ namespace CardClash
                 return;
             }
 
-            if (newNetId == selfNetId)
+            var isSelf = newNetId == selfNetId;
+
+            _cardDrawButton.interactable = isSelf;
+
+            RefreshHandInteractability(isSelf);
+
+            if (!isSelf && _playerData.TryGetValue(newNetId, out var currentPlayerInfo))
             {
-                _currentPlayerNameText.SetText("you");
-
-                _canvasGroup.interactable = true;
-
-                _canvasGroup.blocksRaycasts = true;
-
-                RefreshHandInteractability(true);
-            }
-            else
-            {
-                if (_playerData.TryGetValue(newNetId, out var currentPlayerInfo))
-                {
-                    _currentPlayerNameText.SetText(currentPlayerInfo.playerName);
-                }
-
-                _canvasGroup.interactable = false;
-
-                _canvasGroup.blocksRaycasts = true;
-
-                RefreshHandInteractability(false);
+                
             }
         }
 
         private void OnTopDiscardChanged(GameCard oldCard, GameCard newCard)
         {
             _syncedTopDiscard = newCard;
-
-            var isWildCard = newCard.Type is CardType.Wild or CardType.WildDrawFour;
 
             if (NetworkClient.localPlayer is { netId: var selfNetId } && _currentPlayerNetId == selfNetId)
             {
@@ -1516,7 +1578,7 @@ namespace CardClash
 
         private void OnTurnStartTimeChanged(double oldValue, double newValue)
         {
-            var isMyTurn =NetworkClient.localPlayer is { netId: var selfNetId } && _currentPlayerNetId == selfNetId;
+            var isMyTurn = NetworkClient.localPlayer is { netId: var selfNetId } && _currentPlayerNetId == selfNetId;
 
             _isTimerRunningLocally = isMyTurn;
 
@@ -1538,14 +1600,48 @@ namespace CardClash
 
         private void OnPlayerDataChanged(SyncIDictionary<uint, PlayerGameInfo>.Operation op, uint netId, PlayerGameInfo data)
         {
-            if (!_netIdToGuiIndex.TryGetValue(netId, out int index))
+            // Handle player removal
+            if (op == SyncIDictionary<uint, PlayerGameInfo>.Operation.OP_REMOVE)
             {
+                if (_netIdToGuiIndex.TryGetValue(netId, out int index))
+                {
+                    if (index >= 0 && index < _playerGUIs.Count)
+                    {
+                        Destroy(_playerGUIs[index].gameObject);
+                        _playerGUIs.RemoveAt(index);
+
+                        // Adjust indices for all remaining players that were after the removed one
+                        var keys = _netIdToGuiIndex.Keys.ToList();
+                        foreach (var key in keys)
+                        {
+                            if (key != netId && _netIdToGuiIndex[key] > index)
+                            {
+                                _netIdToGuiIndex[key]--;
+                            }
+                        }
+                    }
+                    _netIdToGuiIndex.Remove(netId);
+                }
                 return;
             }
 
-            if (_playerData.TryGetValue(netId, out var updatedData))
+            // Handle player addition
+            if (!_netIdToGuiIndex.TryGetValue(netId, out int playerIndex))
             {
-                _playerGUIs[index].UpdateCardCount(updatedData.cardCount);
+                var playerGUI = Instantiate(_playerGUIPrefab, _playerGUIsParent);
+                _netIdToGuiIndex[netId] = _playerGUIs.Count;
+                _playerGUIs.Add(playerGUI);
+
+                if (_playerData.TryGetValue(netId, out var currentData))
+                    playerGUI.UpdateCardCount(currentData.cardCount);
+                return;
+            }
+
+            // Handle update to existing player
+            if (playerIndex >= 0 && playerIndex < _playerGUIs.Count)
+            {
+                if (_playerData.TryGetValue(netId, out var updatedData))
+                    _playerGUIs[playerIndex].UpdateCardCount(updatedData.cardCount);
             }
         }
 
@@ -1563,24 +1659,11 @@ namespace CardClash
                    netId;
         }
 
-        public void RefreshHandInteractability(
-            bool isMyTurn)
+        public void RefreshHandInteractability(bool isMyTurn)
         {
-            foreach (Transform item
-                     in _handContainer)
+            foreach (var card in _handCards)
             {
-                if (!item.TryGetComponent<Card>(
-                        out var card))
-                {
-                    continue;
-                }
-
-                card.SetInteractable(
-                    isMyTurn &&
-                    IsValidPlay(
-                        card.CardData
-                    )
-                );
+                card.SetInteractable(isMyTurn && IsValidPlay(card.CardData));
             }
         }
 

@@ -56,6 +56,7 @@ namespace CardClash
 
         private IEnumerator IE_RetryConnection()
         {
+            _retryButton.interactable = false;
             _reconnecting.alpha = 1.0f;
 
             _reconnectingAnimation.Play();
@@ -80,6 +81,7 @@ namespace CardClash
             _reconnectingAnimation.Stop();
 
             _reconnecting.alpha = 0.0f;
+            _retryButton.interactable = true;
         }
 
         #endregion

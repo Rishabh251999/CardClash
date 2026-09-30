@@ -11,7 +11,6 @@ namespace CardClash
         #region Scripts
 
         [SerializeField] private UIManager _uiManager;
-        [SerializeField] private GameManager _gameManager;
         [SerializeField] private RoomGUI _roomPrefab;
 
         #endregion
@@ -33,13 +32,14 @@ namespace CardClash
 
         #endregion
 
-        #region State
+        #region Runtime State
 
-        private IReadOnlyDictionary<Guid, RoomInfo> _openRooms;
+        private ClientRoomRepository _clientRoomRepository;
 
         #endregion
 
         #region Unity Lifecycle 
+        internal void Initialize(ClientRoomRepository clientRoomRepository) => _clientRoomRepository = clientRoomRepository;
 
         private void Start()
         {
@@ -62,13 +62,9 @@ namespace CardClash
         [ClientCallback]
         public void UpdateRoomList(IReadOnlyDictionary<Guid, RoomInfo> openRooms)
         {
-            _openRooms = openRooms;
-
-            // Clear existing room list UI
             foreach (Transform child in _matchList.transform)
                 Destroy(child.gameObject);
 
-            // Create UI elements for each room
             foreach (var roomInfo in openRooms.Values)
             {
                 var roomUIElement = Instantiate(_roomPrefab, _matchList.transform);
@@ -80,7 +76,7 @@ namespace CardClash
                     toggle.group = _toggleGroup;
                     toggle.onValueChanged.AddListener(_ => UpdateJoinButtonState());
 
-                    if (roomInfo.roomCode == _gameManager.selectedRoom)
+                    if (roomInfo.roomCode == _clientRoomRepository.SelectedRoom)
                         toggle.isOn = true;
                 }
             }
@@ -88,22 +84,18 @@ namespace CardClash
             UpdateJoinButtonState();
         }
 
-        /// <summary>
-        /// Called from Create Button
-        /// </summary>
+
         [ClientCallback]
         public void RequestCreateRoom()
         {
             _uiManager.SetState(ScreenType.RoomInfo);
         }
 
-        /// <summary>
-        /// Called from Join Button
-        /// </summary>
+
         [ClientCallback]
         public void RequestJoinRoom()
         {
-            if (_gameManager.selectedRoom == Guid.Empty)
+            if (_clientRoomRepository.SelectedRoom == Guid.Empty)
             {
                 Debug.LogWarning("No room selected");
                 return;
@@ -112,16 +104,19 @@ namespace CardClash
             NetworkClient.Send(new ServerRoomMessage
             {
                 serverRoomOperation = ServerRoomOperation.Join,
-                roomCode = _gameManager.selectedRoom
+                roomCode = _clientRoomRepository.SelectedRoom
             });
         }
+
 
         [ClientCallback]
         private void UpdateJoinButtonState()
         {
-            var canJoin = _gameManager.selectedRoom != Guid.Empty && 
-                _openRooms != null && _openRooms.TryGetValue(_gameManager.selectedRoom, out var roomInfo)
-                && roomInfo.playerCount < roomInfo.maxPlayers;
+            var selectedRoom = _clientRoomRepository.SelectedRoom;
+
+            var canJoin = selectedRoom != Guid.Empty && 
+                _clientRoomRepository.OpenRooms.TryGetValue(selectedRoom,out var roomInfo) && 
+                roomInfo.playerCount < roomInfo.maxPlayers;
 
             _joinButton.interactable = canJoin;
         }
