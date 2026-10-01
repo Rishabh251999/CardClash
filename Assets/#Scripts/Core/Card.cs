@@ -135,36 +135,47 @@ namespace CardClash
         }
 
 
-        public void PlayTowards(Transform target, Transform canvas, Action onComplete)
+        public void PlayTowards(Transform target, Transform canvas)
         {
             _button.interactable = false;
 
             if (target == null)
+            {
                 return;
+            }
 
             transform.SetParent(canvas, true);
-            _rectTransform.sizeDelta = new(150, 217); // no GetComponent call needed anymore
 
-            StartCoroutine(MoveToTarget(target, onComplete));
+            _rectTransform.sizeDelta = new Vector2(150f, 217f);
+
+            StartCoroutine(MoveToTarget(target));
         }
 
-        private IEnumerator MoveToTarget(Transform target, Action onComplete)
+        private IEnumerator MoveToTarget(Transform target)
         {
-            Vector3 startPos = transform.position;
-            float duration = CardGameController.Instance.PlayMoveDuration; // cache once, avoid repeated singleton+property lookups every frame
+            var startWorldPosition = _rectTransform.position;
+            var targetWorldPosition = target.position;
 
+            float duration = CardGameController.Instance.PlayMoveDuration;
             float elapsed = 0f;
+
             while (elapsed < duration)
             {
                 elapsed += Time.deltaTime;
+
                 float t = Mathf.Clamp01(elapsed / duration);
-                transform.position = Vector3.Lerp(startPos, target.position, t);
+                t = Mathf.SmoothStep(0f, 1f, t);
+
+                _rectTransform.position = Vector3.Lerp(
+                    startWorldPosition,
+                    targetWorldPosition,
+                    t
+                );
+
                 yield return null;
             }
 
-            transform.position = target.position;
-            yield return _waitForSeconds0_1;
-            onComplete?.Invoke();
+            _rectTransform.position = targetWorldPosition;
         }
 
         public void CaptureDealTarget()

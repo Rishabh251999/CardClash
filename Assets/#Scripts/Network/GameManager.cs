@@ -553,10 +553,37 @@ namespace CardClash
             Debug.Log($"[Server] HandleQuitMatch from conn {conn.connectionId}, netId={conn.identity?.netId}, isOwner={isOwner}");
 
             if (isOwner)
+            {
                 EndMatchForRoom(controller);
+                return;
+            }
 
-            else
-                controller.HandlePlayerQuit(conn);
+            // Non-owner quitting an in-progress match: remove them from the match,
+            // reset their room state, and send them back to the lobby individually.
+            controller.HandlePlayerQuit(conn);
+
+            if (playerInfo.roomCode != Guid.Empty &&
+                _serverRepo.RoomConnections.TryGetValue(playerInfo.roomCode, out var connections))
+            {
+                connections.Remove(conn);
+
+                if (_serverRepo.OpenRooms.TryGetValue(playerInfo.roomCode, out var roomInfo))
+                {
+                    roomInfo.playerCount = connections.Count;
+                    _serverRepo.OpenRooms[playerInfo.roomCode] = roomInfo;
+                }
+            }
+
+            playerInfo.isReady = false;
+            playerInfo.roomCode = Guid.Empty;
+            _serverRepo.PlayerInfos[conn] = playerInfo;
+
+            conn.Send(new ClientRoomMessage
+            {
+                clientRoomOperation = ClientRoomOperation.Left
+            });
+
+            SendRoomList();
         }
 
         [ServerCallback]
@@ -662,8 +689,13 @@ namespace CardClash
                 case ClientDeckOperation.StackedDraw:
                     break;
 
+                case ClientDeckOperation.LastCardCalled:
+                    gc.RefreshLastCardButtonInteractable();
+                    break;
+
                 case ClientDeckOperation.Error:
                     Debug.LogError($"[Deck] Error: {msg.errorMessage}");
+                    gc.RefreshLastCardButtonInteractable();
                     break;
             }
         }

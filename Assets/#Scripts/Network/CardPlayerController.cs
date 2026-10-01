@@ -34,7 +34,7 @@ namespace CardClash
                 chosenWildColor = chosenColor
             });
 
-            card.PlayTowards(instance.CardTargetTransform, instance._canvas.transform, () => Destroy(card.gameObject));
+            card.PlayTowards(instance.CardTargetTransform, instance._canvas.transform);
         }
 
         #endregion

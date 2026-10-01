@@ -347,4 +347,5 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cf04c97b4ce1ff540ae6a7139829eec8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UNO.GamePlayerGUI
+  _turnImage: {fileID: 6082300156578449305}
   _cardCountText: {fileID: 1407894515707068761}
