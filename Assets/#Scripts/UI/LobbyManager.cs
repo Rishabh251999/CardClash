@@ -21,13 +21,17 @@ namespace CardClash
         [Header("UI References")]
 
         [SerializeField] private Button _createButton;
-        [SerializeField] private Button _joinButton;
+        [SerializeField] private Button _profileButton;
 
         [Space(2.5f)]
+        [SerializeField] private CanvasGroup _noRoomsCanvasGroup;
 
-        [SerializeField] private ToggleGroup _toggleGroup;
+        #endregion
 
-        [Space(2.5f)]
+        #region Rect Transforms
+
+        [Header("Rect Transform")]
+        [Space(5f)]
         [SerializeField] private RectTransform _matchList;
 
         #endregion
@@ -44,15 +48,13 @@ namespace CardClash
         private void Start()
         {
             _createButton.onClick.AddListener(RequestCreateRoom);
-            _joinButton.onClick.AddListener(RequestJoinRoom);
-
-            _joinButton.interactable = false;
+            _profileButton.onClick.AddListener(OnProfileButtonClick);
         }
 
         private void OnDestroy()
         {
             _createButton.onClick.RemoveListener(RequestCreateRoom);
-            _joinButton.onClick.RemoveListener(RequestJoinRoom);
+            _profileButton.onClick.RemoveListener(OnProfileButtonClick);
         }
 
         #endregion
@@ -69,31 +71,29 @@ namespace CardClash
             {
                 var roomUIElement = Instantiate(_roomPrefab, _matchList.transform);
                 roomUIElement.transform.SetParent(_matchList.transform, false);
-                roomUIElement.SetRoomInfo(roomInfo);
 
-                if (roomUIElement.TryGetComponent<Toggle>(out var toggle))
-                {
-                    toggle.group = _toggleGroup;
-                    toggle.onValueChanged.AddListener(_ => UpdateJoinButtonState());
-
-                    if (roomInfo.roomCode == _clientRoomRepository.SelectedRoom)
-                        toggle.isOn = true;
-                }
+                var roomCode = roomInfo.roomCode;
+                roomUIElement.SetRoomInfo(roomInfo, RequestJoinRoom);
             }
 
-            UpdateJoinButtonState();
+            _noRoomsCanvasGroup.alpha = openRooms.Count == 0 ? 1f : 0f;
         }
 
 
         [ClientCallback]
-        public void RequestCreateRoom()
+        private void RequestCreateRoom()
         {
-            _uiManager.SetState(ScreenType.RoomInfo);
+            _uiManager.SetState(ScreenType.RoomInfo, true);
+        }
+
+        private void OnProfileButtonClick()
+        {
+            _uiManager.SetState(ScreenType.Profile, true);
         }
 
 
         [ClientCallback]
-        public void RequestJoinRoom()
+        private void RequestJoinRoom()
         {
             if (_clientRoomRepository.SelectedRoom == Guid.Empty)
             {
@@ -106,19 +106,6 @@ namespace CardClash
                 serverRoomOperation = ServerRoomOperation.Join,
                 roomCode = _clientRoomRepository.SelectedRoom
             });
-        }
-
-
-        [ClientCallback]
-        private void UpdateJoinButtonState()
-        {
-            var selectedRoom = _clientRoomRepository.SelectedRoom;
-
-            var canJoin = selectedRoom != Guid.Empty && 
-                _clientRoomRepository.OpenRooms.TryGetValue(selectedRoom,out var roomInfo) && 
-                roomInfo.playerCount < roomInfo.maxPlayers;
-
-            _joinButton.interactable = canJoin;
         }
 
         #endregion

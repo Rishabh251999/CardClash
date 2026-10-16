@@ -211,7 +211,7 @@ namespace CardClash
 
             _gameManager.OnClientConnect();
 
-            _uiManager.SetState(ScreenType.Lobby, instant: false);
+            _uiManager.SetState(ScreenType.Lobby, false);
 
             Debug.Log("CardNetworkManager: Client connected to server.");
         }

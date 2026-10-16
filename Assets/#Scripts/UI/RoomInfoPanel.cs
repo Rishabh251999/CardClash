@@ -9,7 +9,7 @@ namespace CardClash
     public class RoomInfoPanel : MonoBehaviour
     {
         #region Constants
-        private const int MinPlayers = 2;
+        private const int MinPlayers = 3;
         private const int MaxPlayers = 8;
         private const int DefaultPlayers = 4;
 
@@ -42,43 +42,43 @@ namespace CardClash
 
         #region Unity Lifecycle
 
-        private void Awake()
+        private void Start()
         {
             PopulateDropdown(_maxPlayers, MinPlayers, MaxPlayers, DefaultPlayers);
             PopulateDropdown(_startingCards, MinStartingCards, MaxStartingCards, DefaultStartingCards);
-        }
 
-        private void Start()
-        {
-            _backButton.onClick.AddListener(OnBackButtonClicked);
-            _createButton.onClick.AddListener(OnCreateButtonClicked);
+            if(_backButton is { })
+                _backButton.onClick.AddListener(OnBackButtonClicked);
+
+            if(_createButton is { })
+                _createButton.onClick.AddListener(OnCreateButtonClicked);
+
+            if (_uiManager is { })
+                _uiManager.OnStateChanged += OnStateChanged;
         }
 
         private void OnDestroy()
         {
-            _backButton.onClick.RemoveListener(OnBackButtonClicked);
-            _createButton.onClick.RemoveListener(OnCreateButtonClicked);
+            if (_backButton is { })
+                _backButton.onClick.RemoveListener(OnBackButtonClicked);
+
+            if (_createButton is { })
+                _createButton.onClick.RemoveListener(OnCreateButtonClicked);
+
+            if (_uiManager is { })
+                _uiManager.OnStateChanged -= OnStateChanged;
         }
 
         private void PopulateDropdown(TMP_Dropdown dropdown, int min, int max, int defaultValue)
         {
-            if (dropdown == null)
-            {
+            if (dropdown is not { })
                 return;
-            }
 
-            List<string> options = new();
-            int defaultIndex = 0;
+            var options = new List<string>(max - min + 1);
+            var defaultIndex = Mathf.Clamp(defaultValue, min, max) - min;
 
-            for (int value = min; value <= max; value++)
-            {
-                options.Add(value.ToString());
-
-                if (value == defaultValue)
-                {
-                    defaultIndex = options.Count - 1;
-                }
-            }
+            for (var value = min; value <= max; value++)
+                options.Add($"{value}");
 
             dropdown.ClearOptions();
             dropdown.AddOptions(options);
@@ -86,12 +86,12 @@ namespace CardClash
             dropdown.RefreshShownValue();
         }
 
-        private void OnBackButtonClicked() => _uiManager.SetState(ScreenType.Lobby, false);
+        private void OnBackButtonClicked() => _uiManager.SetState(ScreenType.Lobby, true);
 
         private void OnCreateButtonClicked()
         {
-            var maxPlayers = int.Parse(_maxPlayers.options[_maxPlayers.value].text);
-            var startingCards = int.Parse(_startingCards.options[_startingCards.value].text);
+            var maxPlayers = _maxPlayers.value + MinPlayers;
+            var startingCards = _startingCards.value + MinStartingCards;
 
             NetworkClient.Send(new ServerRoomMessage
             {
@@ -99,6 +99,15 @@ namespace CardClash
                 maxPlayers = maxPlayers,
                 startingCards = startingCards
             });
+        }
+
+        private void OnStateChanged(ScreenType state)
+        {
+            if (state is not ScreenType.RoomInfo)
+                return;
+
+            PopulateDropdown(_maxPlayers, MinPlayers, MaxPlayers, DefaultPlayers);
+            PopulateDropdown(_startingCards, MinStartingCards, MaxStartingCards, DefaultStartingCards);
         }
 
         #endregion

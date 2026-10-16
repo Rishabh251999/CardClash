@@ -1,10 +1,8 @@
 using Mirror;
 using System;
 using System.Collections;
-using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace CardClash
 {
@@ -29,12 +27,13 @@ namespace CardClash
 
         [Header("GUI References")]
         [SerializeField] private CardGameController matchControllerPrefab;
-        [SerializeField] private Button joinButton;
 
         #endregion
 
         #region Runtime State
 
+        private RoomService _roomService;
+        private MatchService _matchService;
         private readonly ServerRoomRepository _serverRepo = new();
         private readonly ClientRoomRepository _clientRepo = new();
         internal ClientRoomRepository ClientRoomRepository => _clientRepo;
@@ -49,6 +48,10 @@ namespace CardClash
 
         private void Awake()
         {
+            _roomService = new(_serverRepo, () => SendRoomList());
+
+            _matchService = new(_serverRepo, matchControllerPrefab, () => SendRoomList());
+
             _reconnectService = new(_serverRepo, this, () => SendRoomList());
 
             _lobbyManager.Initialize(_clientRepo);
@@ -93,50 +96,56 @@ namespace CardClash
         [ServerCallback]
         internal IEnumerator OnServerDisconnect(NetworkConnectionToClient conn)
         {
-            _serverRepo.PlayerInfos.TryGetValue(conn, out PlayerRoomInfo matchInfo);
+            _serverRepo.PlayerInfos.TryGetValue(conn, out PlayerRoomInfo playerInfo);
 
-            var roomCode = matchInfo.roomCode;
+            var roomCode = playerInfo.roomCode;
 
-            // Match already started -> unchanged existing behavior
-            if (_serverRepo.MatchControllers.TryGetValue(roomCode, out var matchController))
+            // Recover the room code if player information is incomplete.
+            if (roomCode == Guid.Empty && _serverRepo.PlayerRooms.TryGetValue(conn, out var mappedRoom))
             {
-                if (matchInfo.isOwner)
-                    EndMatchForRoom(matchController);
-                else
-                    matchController.HandlePlayerQuit(conn);
+                roomCode = mappedRoom;
             }
-            else if (_serverRepo.PlayerRooms.TryGetValue(conn, out var ownedRoomCode))
-            {
-                // Owner disconnecting from a still-open (not started) room
-                _serverRepo.PlayerRooms.Remove(conn);
-                _serverRepo.OpenRooms.Remove(ownedRoomCode);
 
-                if (_serverRepo.RoomConnections.TryGetValue(ownedRoomCode, out var connections))
+            // CASE 1: The player belongs to an active match.
+            if (roomCode != Guid.Empty && _serverRepo.MatchControllers.TryGetValue(roomCode, out var matchController))
+            {
+                if (playerInfo.isOwner)
                 {
-                    foreach (var playerConn in connections.ToList())
-                    {
-                        if (playerConn == conn) continue;
-                        var info = _serverRepo.PlayerInfos[playerConn];
-                        info.isReady = false;
-                        info.roomCode = Guid.Empty;
-                        _serverRepo.PlayerInfos[playerConn] = info;
-                        playerConn.Send(new ClientRoomMessage { clientRoomOperation = ClientRoomOperation.Left });
-                    }
-                    _serverRepo.RoomConnections.Remove(ownedRoomCode);
+                    // Owner disconnecting ends the match.
+                    _matchService.EndMatch(matchController);
+                }
+                else
+                {
+                    // Non-owner disconnecting leaves the active match.
+                    matchController.HandlePlayerQuit(conn);
+
+                    playerInfo.isReady = false;
+                    playerInfo.roomCode = Guid.Empty;
+                    _serverRepo.PlayerInfos[conn] = playerInfo;
                 }
             }
-
-            else if (roomCode != Guid.Empty)
+            // CASE 2: The owner disconnects from a waiting room.
+            else if (playerInfo.isOwner &&
+                     _serverRepo.PlayerRooms.ContainsKey(conn))
             {
-                _reconnectService.HandleDisconnect(conn, matchInfo, roomCode);
+                _roomService.CancelRoom(conn);
+            }
+            // CASE 3: A non-owner disconnects from a waiting room.
+            else if (roomCode != Guid.Empty && _serverRepo.OpenRooms.ContainsKey(roomCode))
+            {
+                _reconnectService.HandleDisconnect(conn, playerInfo, roomCode);
             }
 
+            // Remove the disconnected connection's server records.
+            _serverRepo.PlayerRooms.Remove(conn);
             _serverRepo.PlayerInfos.Remove(conn);
             _serverRepo.WaitingConnections.Remove(conn);
+
             SendRoomList();
 
             yield return null;
         }
+
 
         [ServerCallback]
         private void OnSetPlayerInfo(NetworkConnectionToClient conn, SetPlayerInfoMessage msg)
@@ -205,30 +214,37 @@ namespace CardClash
         #region Server Message Handler
 
         [ServerCallback]
-        void OnServerRoomMessage(NetworkConnectionToClient conn, ServerRoomMessage msg)
+        private void OnServerRoomMessage(NetworkConnectionToClient conn, ServerRoomMessage msg)
         {
             switch (msg.serverRoomOperation)
             {
                 case ServerRoomOperation.Create:
-                    OnServerCreateRoom(conn, msg.maxPlayers, msg.startingCards);
+                    _roomService.CreateRoom(
+                        conn, msg.maxPlayers, msg.startingCards);
                     break;
+
                 case ServerRoomOperation.Join:
-                    OnServerJoinRoom(conn, msg.roomCode);
+                    _roomService.JoinRoom(conn, msg.roomCode);
                     break;
+
                 case ServerRoomOperation.Leave:
-                    OnServerLeaveRoom(conn);
+                    _roomService.LeaveRoom(conn);
                     break;
+
                 case ServerRoomOperation.Cancel:
-                    OnServerCancelRoom(conn);
+                    _roomService.CancelRoom(conn);
                     break;
+
                 case ServerRoomOperation.List:
                     SendRoomList(conn);
                     break;
+
                 case ServerRoomOperation.Ready:
-                    OnServerPlayerReady(conn, msg.roomCode);
+                    _roomService.ToggleReady(conn, msg.roomCode);
                     break;
+
                 case ServerRoomOperation.Start:
-                    OnServerStartGame(conn);
+                    _matchService.StartMatch(conn);
                     break;
             }
         }
@@ -259,7 +275,7 @@ namespace CardClash
 
             if (msg.serverDeckOperation is ServerDeckOperation.QuitMatch)
             {
-                HandleQuitMatch(conn, controller);
+                _matchService.QuitMatch(conn, controller);
                 return;
             }
 
@@ -289,320 +305,6 @@ namespace CardClash
             }
         }
 
-        [ServerCallback]
-        void OnServerCreateRoom(NetworkConnectionToClient conn, int maxPlayers, int startingCards)
-        {
-            if (_serverRepo.PlayerRooms.ContainsKey(conn)) return;
-
-            var newRoomCode = Guid.NewGuid();
-            _serverRepo.RoomConnections.Add(newRoomCode, new HashSet<NetworkConnectionToClient> { conn });
-            _serverRepo.PlayerRooms.Add(conn, newRoomCode);
-            _serverRepo.OpenRooms.Add(newRoomCode, new()
-            {
-                roomCode = newRoomCode,
-                maxPlayers = maxPlayers,
-                startingCards = startingCards,
-                playerCount = 1,
-                isStarted = false
-            });
-
-            var playerInfo = _serverRepo.PlayerInfos[conn];
-            playerInfo.isReady = false;
-            playerInfo.isOwner = true;
-            playerInfo.roomCode = newRoomCode;
-            _serverRepo.PlayerInfos[conn] = playerInfo;
-
-            PlayerRoomInfo[] info = _serverRepo.RoomConnections[newRoomCode]
-                .Select(playerConn => _serverRepo.PlayerInfos[playerConn])
-                .ToArray();
-
-            conn.Send(new ClientRoomMessage
-            {
-                clientRoomOperation = ClientRoomOperation.Created,
-                roomCode = newRoomCode,
-                playerInfo = info,
-                maxPlayers = maxPlayers
-            });
-
-            SendRoomList();
-        }
-
-        [ServerCallback]
-        void OnServerJoinRoom(NetworkConnectionToClient conn, Guid roomCode)
-        {
-            if (!_serverRepo.RoomConnections.ContainsKey(roomCode) || !_serverRepo.OpenRooms.ContainsKey(roomCode))
-            {
-                conn.Send(new ClientRoomMessage
-                {
-                    clientRoomOperation = ClientRoomOperation.Error,
-                    errorMessage = $"Room {roomCode} not found"
-                });
-                return;
-            }
-
-            RoomInfo roomInfo = _serverRepo.OpenRooms[roomCode];
-            if (roomInfo.playerCount >= roomInfo.maxPlayers)
-            {
-                conn.Send(new ClientRoomMessage
-                {
-                    clientRoomOperation = ClientRoomOperation.Error,
-                    errorMessage = $"Room {roomCode} is full"
-                });
-                return;
-            }
-
-            roomInfo.playerCount++;
-            _serverRepo.OpenRooms[roomCode] = roomInfo;
-            _serverRepo.RoomConnections[roomCode].Add(conn);
-
-            var playerInfo = _serverRepo.PlayerInfos[conn];
-            playerInfo.isReady = false;
-            playerInfo.roomCode = roomCode;
-            playerInfo.isOwner = false;
-            _serverRepo.PlayerInfos[conn] = playerInfo;
-
-            PlayerRoomInfo[] info = _serverRepo.RoomConnections[roomCode]
-                .Select(playerConn => _serverRepo.PlayerInfos[playerConn])
-                .ToArray();
-
-            SendRoomList();
-
-            conn.Send(new ClientRoomMessage
-            {
-                clientRoomOperation = ClientRoomOperation.Joined,
-                roomCode = roomCode,
-                playerInfo = info
-            });
-
-            foreach (NetworkConnectionToClient playerConn in _serverRepo.RoomConnections[roomCode])
-                playerConn.Send(new ClientRoomMessage
-                {
-                    clientRoomOperation = ClientRoomOperation.UpdateRoom,
-                    playerInfo = info,
-                    maxPlayers = roomInfo.maxPlayers
-                });
-        }
-
-        [ServerCallback]
-        void OnServerLeaveRoom(NetworkConnectionToClient conn)
-        {
-            if (!_serverRepo.PlayerInfos.TryGetValue(conn, out PlayerRoomInfo playerInfo))
-                return;
-
-            var roomCode = playerInfo.roomCode;
-
-            if (!_serverRepo.RoomConnections.ContainsKey(roomCode))
-                return;
-
-            conn.Send(new ClientRoomMessage
-            {
-                clientRoomOperation = ClientRoomOperation.Left
-            });
-
-            _serverRepo.RoomConnections[roomCode].Remove(conn);
-            playerInfo.isReady = false;
-            playerInfo.roomCode = Guid.Empty;
-            _serverRepo.PlayerInfos[conn] = playerInfo;
-
-            if (_serverRepo.RoomConnections[roomCode].Count == 0)
-            {
-                _serverRepo.RoomConnections.Remove(roomCode);
-                _serverRepo.OpenRooms.Remove(roomCode);
-                Debug.Log($"RoomManager: Room {roomCode} closed (empty)");
-            }
-            else
-            {
-                RoomInfo roomInfo = _serverRepo.OpenRooms[roomCode];
-                roomInfo.playerCount = _serverRepo.RoomConnections[roomCode].Count;
-                _serverRepo.OpenRooms[roomCode] = roomInfo;
-
-                PlayerRoomInfo[] playerRoomInfo = _serverRepo.RoomConnections[roomCode]
-                    .Select(playerConn => _serverRepo.PlayerInfos[playerConn])
-                    .ToArray();
-
-                foreach (NetworkConnectionToClient playerConn in _serverRepo.RoomConnections[roomCode])
-                    playerConn.Send(new ClientRoomMessage
-                    {
-                        clientRoomOperation = ClientRoomOperation.UpdateRoom,
-                        playerInfo = playerRoomInfo
-                    });
-            }
-
-            SendRoomList();
-        }
-
-        [ServerCallback]
-        void OnServerCancelRoom(NetworkConnectionToClient conn)
-        {
-            if (!_serverRepo.PlayerRooms.ContainsKey(conn)) return;
-
-            conn.Send(new ClientRoomMessage
-            {
-                clientRoomOperation = ClientRoomOperation.Cancelled,
-            });
-
-            if (_serverRepo.PlayerRooms.TryGetValue(conn, out var roomCode))
-            {
-                _serverRepo.PlayerRooms.Remove(conn);
-                _serverRepo.OpenRooms.Remove(roomCode);
-
-                foreach (var item in _serverRepo.RoomConnections[roomCode])
-                {
-                    var playerInfo = _serverRepo.PlayerInfos[item];
-                    playerInfo.isReady = false;
-                    playerInfo.roomCode = Guid.Empty;
-                    item.Send(new ClientRoomMessage
-                    {
-                        clientRoomOperation = ClientRoomOperation.Left
-                    });
-                }
-
-                SendRoomList();
-            }
-        }
-
-        [ServerCallback]
-        void OnServerPlayerReady(NetworkConnectionToClient conn, Guid roomCode)
-        {
-            var playerInfo = _serverRepo.PlayerInfos[conn];
-
-            playerInfo.isReady = !playerInfo.isReady;
-            _serverRepo.PlayerInfos[conn] = playerInfo;
-
-            HashSet<NetworkConnectionToClient> connections = _serverRepo.RoomConnections[roomCode];
-            var info = connections.Select(playerConn => _serverRepo.PlayerInfos[playerConn]).ToArray();
-
-            var maxPlayers = _serverRepo.OpenRooms[roomCode].maxPlayers;
-
-            foreach (var item in _serverRepo.RoomConnections[roomCode])
-            {
-                item.Send(new ClientRoomMessage
-                {
-                    clientRoomOperation = ClientRoomOperation.UpdateRoom,
-                    playerInfo = info,
-                    maxPlayers = maxPlayers
-                });
-            }
-        }
-
-        [ServerCallback]
-        private void OnServerStartGame(NetworkConnectionToClient conn)
-        {
-            if (!_serverRepo.PlayerRooms.TryGetValue(conn, out var roomCode))
-                return;
-
-            var startingCards = _serverRepo.OpenRooms.TryGetValue(roomCode, out var roomInfo) ? roomInfo.startingCards : 0;
-
-            var matchController = Instantiate(matchControllerPrefab);
-            if (matchController.TryGetComponent<NetworkMatch>(out var networkMatch))
-            {
-                networkMatch.matchId = roomCode;
-            }
-            NetworkServer.Spawn(matchController.gameObject);
-            _serverRepo.MatchControllers[roomCode] = matchController;
-
-            CardDeck deck = new();
-            deck.BuildDeck();
-            _serverRepo.RoomDecks[roomCode] = deck;
-
-            foreach (NetworkConnectionToClient playerConn in _serverRepo.RoomConnections[roomCode])
-            {
-                playerConn.Send(new ClientRoomMessage
-                {
-                    clientRoomOperation = ClientRoomOperation.Started,
-                    roomCode = roomCode
-                });
-
-                var player = Instantiate(NetworkManager.singleton.playerPrefab);
-
-                if (player.TryGetComponent<NetworkMatch>(out var playerNetworkMatch))
-                {
-                    playerNetworkMatch.matchId = roomCode;
-                }
-                else
-                {
-                    Debug.LogError("Player prefab does not have a NetworkMatch component.");
-                }
-
-                if (playerConn.identity != null)
-                    NetworkServer.ReplacePlayerForConnection(playerConn, player, ReplacePlayerOptions.Destroy);
-                else
-                    NetworkServer.AddPlayerForConnection(playerConn, player);
-
-                matchController.AddPlayer(playerConn, _serverRepo.PlayerInfos[playerConn]);
-
-                var playerInfo = _serverRepo.PlayerInfos[playerConn];
-                playerInfo.isReady = false;
-                _serverRepo.PlayerInfos[playerConn] = playerInfo;
-            }
-
-            matchController.StartGame(deck, startingCards);
-
-            _serverRepo.PlayerRooms.Remove(conn);
-            _serverRepo.OpenRooms.Remove(roomCode);
-            _serverRepo.RoomConnections.Remove(roomCode);
-
-            SendRoomList();
-        }
-
-        [ServerCallback]
-        private void HandleQuitMatch(NetworkConnectionToClient conn, CardGameController controller)
-        {
-            var isOwner = _serverRepo.PlayerInfos.TryGetValue(conn, out var playerInfo) && playerInfo.isOwner;
-
-            Debug.Log($"[Server] HandleQuitMatch from conn {conn.connectionId}, netId={conn.identity?.netId}, isOwner={isOwner}");
-
-            if (isOwner)
-            {
-                EndMatchForRoom(controller);
-                return;
-            }
-
-            // Non-owner quitting an in-progress match: remove them from the match,
-            // reset their room state, and send them back to the lobby individually.
-            controller.HandlePlayerQuit(conn);
-
-            if (playerInfo.roomCode != Guid.Empty &&
-                _serverRepo.RoomConnections.TryGetValue(playerInfo.roomCode, out var connections))
-            {
-                connections.Remove(conn);
-
-                if (_serverRepo.OpenRooms.TryGetValue(playerInfo.roomCode, out var roomInfo))
-                {
-                    roomInfo.playerCount = connections.Count;
-                    _serverRepo.OpenRooms[playerInfo.roomCode] = roomInfo;
-                }
-            }
-
-            playerInfo.isReady = false;
-            playerInfo.roomCode = Guid.Empty;
-            _serverRepo.PlayerInfos[conn] = playerInfo;
-
-            conn.Send(new ClientRoomMessage
-            {
-                clientRoomOperation = ClientRoomOperation.Left
-            });
-
-            SendRoomList();
-        }
-
-        [ServerCallback]
-        private void EndMatchForRoom(CardGameController controller)
-        {
-            if (!controller.TryGetComponent<NetworkMatch>(out var networkMatch))
-                return;
-
-            Guid roomCode = networkMatch.matchId;
-
-            controller.EndMatch();
-
-            _serverRepo.MatchControllers.Remove(roomCode);
-            _serverRepo.RoomDecks.Remove(roomCode);
-
-            if (controller != null)
-                NetworkServer.Destroy(controller.gameObject);
-        }
-
         #endregion
 
         #region Client Message Handler
@@ -629,7 +331,10 @@ namespace CardClash
                     break;
 
                 case ClientRoomOperation.Left:
-                    Debug.Log("[Client] Received Left message, calling OnRoomLeft()");
+                    OnRoomLeft();
+                    break;
+
+                case ClientRoomOperation.Cancelled:
                     OnRoomLeft();
                     break;
 
@@ -644,7 +349,7 @@ namespace CardClash
                     break;
 
                 case ClientRoomOperation.Started:
-                    _uiManager.SetState(ScreenType.Game);
+                    _uiManager.SetState(ScreenType.Game, true);
                     break;
 
                 case ClientRoomOperation.MatchEndedByOwner:
@@ -710,23 +415,17 @@ namespace CardClash
             if (roomId == Guid.Empty)
             {
                 _clientRepo.ClearSelectedRoom();
-
-                joinButton.interactable = false;
                 return;
             }
 
             if (!_clientRepo.OpenRooms.ContainsKey(roomId))
             {
-                joinButton.interactable = false;
                 return;
             }
 
             _clientRepo.SelectRoom(roomId);
 
             var roomInfo = _clientRepo.OpenRooms[roomId];
-
-            joinButton.interactable =
-                roomInfo.playerCount < roomInfo.maxPlayers;
         }
 
         #endregion
@@ -737,7 +436,7 @@ namespace CardClash
         {
             _clientRepo.SetRoom(roomId, true);
 
-            _uiManager.SetState(ScreenType.Room);
+            _uiManager.SetState(ScreenType.Room, true);
         }
 
         [ClientCallback]
@@ -746,7 +445,7 @@ namespace CardClash
             _clientRepo.SetRoom(roomId, false);
             _clientRepo.ClearSelectedRoom();
 
-            _uiManager.SetState(ScreenType.Room);
+            _uiManager.SetState(ScreenType.Room, true);
         }
 
 
@@ -762,7 +461,7 @@ namespace CardClash
 
             _clientRepo.ClearRoom();
 
-            _uiManager.SetState(ScreenType.Lobby);
+            _uiManager.SetState(ScreenType.Lobby, true);
 
             _lobbyManager.UpdateRoomList(_clientRepo.OpenRooms);
         }

@@ -3,8 +3,8 @@ guid: aa49878dbc89e364ead459c58c6925bc
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 2231887219363489790
-    second: Wild_Draw_0
+      213: -4215800133521624314
+    second: WildDrawFour_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -113,13 +113,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: Wild_Draw_0
+      name: WildDrawFour_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 388
-        height: 562
+        width: 288
+        height: 420
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -128,8 +128,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: ef725e8d99149fe10800000000000000
-      internalID: 2231887219363489790
+      spriteID: 60336656d187e75c0800000000000000
+      internalID: -4215800133521624314
       vertices: []
       indices: 
       edges: []
@@ -148,7 +148,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      Wild_Draw_0: 2231887219363489790
+      WildDrawFour_0: -4215800133521624314
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

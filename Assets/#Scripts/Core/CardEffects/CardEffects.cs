@@ -24,9 +24,7 @@ namespace CardClash
             ctx.ReverseTurnDirection();
 
             if (ctx.PlayerCount == 2)
-            {
                 ctx.SkipNextPlayer();
-            }
 
             ctx.AdvanceTurn();
         }
@@ -36,8 +34,7 @@ namespace CardClash
     {
         public void Apply(ICardEffectContext ctx)
         {
-            ctx.ForcePlayerDraw(ctx.GetNextPlayerNetId(), 2);
-            ctx.SkipNextPlayer();
+            ctx.AddPendingDraw(CardType.DrawTwo, 2);
             ctx.AdvanceTurn();
         }
     }
@@ -46,8 +43,7 @@ namespace CardClash
     {
         public void Apply(ICardEffectContext ctx)
         {
-            ctx.ForcePlayerDraw(ctx.GetNextPlayerNetId(), 4);
-            ctx.SkipNextPlayer();
+            ctx.AddPendingDraw(CardType.WildDrawFour, 4);
             ctx.AdvanceTurn();
         }
     }

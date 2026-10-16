@@ -12,6 +12,7 @@ namespace CardClash
         public IReadOnlyList<uint> TurnOrder => _turnOrder;
 
         public int PlayerCount => _turnOrder.Count;
+        public int TurnDirection => _turnDirection;
 
         public uint CurrentPlayerNetId => _turnOrder[_turnIndex];
 
@@ -62,6 +63,12 @@ namespace CardClash
         public bool IsCurrentPlayer(uint netId)
         {
             return PlayerCount > 0 && CurrentPlayerNetId == netId;
+        }
+
+        public void ResetTurnIndex()
+        {
+            _turnIndex = 0;
+            _turnDirection = 1;
         }
 
         private int NextIndex()

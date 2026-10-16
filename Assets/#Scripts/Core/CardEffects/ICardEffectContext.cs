@@ -18,5 +18,7 @@ namespace CardClash
         uint GetNextPlayerNetId();
 
         void ForcePlayerDraw(uint targetNetId, int count);
+
+        void AddPendingDraw(CardType type, int count);
     }
 }

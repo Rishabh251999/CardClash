@@ -1,5 +1,6 @@
 using Mirror;
 using System;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -50,6 +51,8 @@ namespace CardClash
         private bool _owner;
 
         private Guid _roomCode = Guid.Empty;
+
+        private readonly List<PlayerGUI> _slots = new();
 
         #endregion
 
@@ -137,25 +140,32 @@ namespace CardClash
         [ClientCallback]
         public void RefreshRoomPlayers(PlayerRoomInfo[] playerInfo, int maxPlayers)
         {
-            foreach (Transform child in _playerList.transform)
-                Destroy(child.gameObject);
+            while (_slots.Count < maxPlayers)
+                _slots.Add(Instantiate(_playerPrefab, _playerList.transform, false));
 
-            _startButton.interactable = false;
-
+            var count = Mathf.Min(playerInfo.Length, maxPlayers);
             var everyoneReady = true;
 
-            foreach (var player in playerInfo)  
+            for (var i = 0; i < _slots.Count; i++)
             {
-                var newPlayer = Instantiate(_playerPrefab, Vector3.zero, Quaternion.identity);
-                newPlayer.transform.SetParent(_playerList.transform, false);
-                newPlayer.SetPlayerInfo(player);
+                var slot = _slots[i];
+                var active = i < maxPlayers;
+                slot.gameObject.SetActive(active);
+                if (!active) continue;
 
-                if (!player.isReady)
-                    everyoneReady = false;
+                if (i < count)
+                {
+                    slot.SetPlayerInfo(playerInfo[i]);
+                    everyoneReady &= playerInfo[i].isReady;
+                }
+                else
+                {
+                    slot.SetWaiting();
+                }
             }
-            _startButton.interactable = everyoneReady && _owner && playerInfo.Length == maxPlayers;
 
-            _playerCountText.SetText($"{playerInfo.Length} / {maxPlayers}");
+            _startButton.interactable = everyoneReady && _owner && count == maxPlayers;
+            _playerCountText.SetText("{0} / {1}", count, maxPlayers);
         }
 
         [ClientCallback]

@@ -1,9 +1,17 @@
 using Mirror;
+using System.Collections;
+using UnityEngine;
 
 namespace CardClash
 {
     public class CardPlayerController : NetworkBehaviour
     {
+        #region Constants/Readonly
+
+        private readonly WaitForSeconds _waitForSeconds0_5 = new(0.5f);
+
+        #endregion
+
         #region Unity Lifecycle
 
         public void TryPlayCard(Card card)
@@ -11,22 +19,34 @@ namespace CardClash
             if (!isLocalPlayer)
                 return;
 
-            if (!CardGameController.Instance.IsMyTurn())
+            var gameController = CardGameController.Instance;
+
+            if (!gameController.IsMyTurn())
                 return;
 
             if (card.CardData.Type is CardType.Wild or CardType.WildDrawFour)
             {
                 card.SetInteractable(false); // prevent double-clicks while choosing
-                CardGameController.Instance.ShowColorPicker(
-                    chosenColor => SendPlay(card, CardGameController.Instance, chosenColor));
+
+                StartCoroutine(ShowColorPickerDelayed(card, gameController));
                 return;
             }
 
-            SendPlay(card, CardGameController.Instance, CardColor.None);
+            SendPlay(card, CardColor.None);
         }
 
-        private void SendPlay(Card card, CardGameController instance, CardColor chosenColor)
+        private IEnumerator ShowColorPickerDelayed(Card card, CardGameController controller)
         {
+            yield return _waitForSeconds0_5;
+
+            controller.ShowColorPicker(
+                chosenColor => SendPlay(card, chosenColor));
+        }
+
+        private void SendPlay(Card card, CardColor chosenColor)
+        {
+            card.BeginReturnWatch();
+
             NetworkClient.Send(new ServerDeckMessage
             {
                 serverDeckOperation = ServerDeckOperation.PlayCard,
@@ -34,7 +54,9 @@ namespace CardClash
                 chosenWildColor = chosenColor
             });
 
-            card.PlayTowards(instance.CardTargetTransform, instance._canvas.transform);
+            var gameController = CardGameController.Instance;
+
+            card.PlayTowards(gameController.CardTargetTransform, gameController._canvas.transform);
         }
 
         #endregion

@@ -18,20 +18,6 @@ namespace CardClash
         [Header("UI References")]
         [SerializeField] private Button _retryButton;
 
-        [Space(2.5f)]
-
-        [SerializeField] private CanvasGroup _reconnecting;
-
-        #endregion
-
-        #region Scripts References
-
-        [SerializeField] private Animation _reconnectingAnimation;
-
-        #endregion
-
-        #region Runtime State
-
         #endregion
 
         #region Unity Lifecycle
@@ -39,8 +25,6 @@ namespace CardClash
         private void Awake()
         {
             _retryButton.onClick.AddListener(RetryConnection);
-
-            _reconnecting.alpha = 0.0f;
         }
 
         private void OnDestroy()
@@ -57,9 +41,6 @@ namespace CardClash
         private IEnumerator IE_RetryConnection()
         {
             _retryButton.interactable = false;
-            _reconnecting.alpha = 1.0f;
-
-            _reconnectingAnimation.Play();
 
             if (NetworkServer.active)
             {
@@ -78,9 +59,7 @@ namespace CardClash
             }
 
             yield return _waitForSeconds5_0;
-            _reconnectingAnimation.Stop();
 
-            _reconnecting.alpha = 0.0f;
             _retryButton.interactable = true;
         }
 

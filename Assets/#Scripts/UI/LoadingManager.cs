@@ -25,7 +25,7 @@ namespace CardClash
         #region UI References
 
         [Header("UI References")]
-        [SerializeField] private Slider _loadingSlider;
+        [SerializeField] private Image _loadingSlider;
 
         #endregion
 
@@ -46,7 +46,7 @@ namespace CardClash
             _uiManager.OnStateChanged += HandleStateChange;
 
             if (_loadingSlider is { } slider)
-                slider.value = 0f;
+                slider.fillAmount = 0f;
         }
 
         private void Update()
@@ -64,7 +64,7 @@ namespace CardClash
 
             if (_fakeLoadingComplete && NetworkClient.isConnected)
             {
-                slider.value = ConnectedProgress;
+                slider.fillAmount = ConnectedProgress;
 
                 enabled = false;
             }
@@ -78,17 +78,17 @@ namespace CardClash
             _uiManager.OnStateChanged -= HandleStateChange;
         }
 
-        private void UpdateFakeLoading(Slider slider)
+        private void UpdateFakeLoading(Image slider)
         {
             if (_fakeLoadingComplete)
                 return;
 
             // Fake loading progresses independently.
-            slider.value = Mathf.MoveTowards(slider.value, WaitingProgress,ProgressSpeed * Time.deltaTime);
+            slider.fillAmount = Mathf.MoveTowards(slider.fillAmount, WaitingProgress,ProgressSpeed * Time.deltaTime);
 
-            if (slider.value >= WaitingProgress)
+            if (slider.fillAmount >= WaitingProgress)
             {
-                slider.value = WaitingProgress;
+                slider.fillAmount = WaitingProgress;
                 _fakeLoadingComplete = true;
             }
         }

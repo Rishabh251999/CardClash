@@ -39,19 +39,22 @@ namespace CardClash
             _lastDrawnCardId.Clear();
         }
 
-        public bool TryGetEntry(uint netId, out PlayerEntry entry) =>
-            _players.TryGetValue(netId, out entry);
+        public void ClearHands()
+        {
+            foreach(var netId in _hands.Keys)
+                _hands[netId].Clear();
 
-        public IReadOnlyList<GameCard> GetHand(uint netId) =>
+            _lastDrawnCardId.Clear();
+        }
+
+        public bool TryGetEntry(uint netId, out PlayerEntry entry) => _players.TryGetValue(netId, out entry);
+
+        public IReadOnlyList<GameCard> GetHand(uint netId) => 
             _hands.TryGetValue(netId, out var hand) ? hand : Array.Empty<GameCard>();
 
-        public int GetHandCount(uint netId) =>
-            _hands.TryGetValue(netId, out var hand) ? hand.Count : 0;
+        public int GetHandCount(uint netId) => _hands.TryGetValue(netId, out var hand) ? hand.Count : 0;
 
-        public void AddCardsToHand(uint netId, IEnumerable<GameCard> cards)
-        {
-            _hands[netId].AddRange(cards);
-        }
+        public void AddCardsToHand(uint netId, IEnumerable<GameCard> cards) => _hands[netId].AddRange(cards);
 
         public bool TryRemoveCard(uint netId, GameCard card)
         {
@@ -67,20 +70,11 @@ namespace CardClash
             return true;
         }
 
-        public void SetLastDrawnCardId(uint netId, byte cardId)
-        {
-            _lastDrawnCardId[netId] = cardId;
-        }
+        public void SetLastDrawnCardId(uint netId, byte cardId) => _lastDrawnCardId[netId] = cardId;
 
-        public void ClearLastDrawnCardId(uint netId)
-        {
-            _lastDrawnCardId.Remove(netId);
-        }
+        public void ClearLastDrawnCardId(uint netId) => _lastDrawnCardId.Remove(netId);
 
-        public bool WasLastDrawnCard(uint netId, byte cardId)
-        {
-            return _lastDrawnCardId.TryGetValue(netId, out var id) && id == cardId;
-        }
+        public bool WasLastDrawnCard(uint netId, byte cardId) => _lastDrawnCardId.TryGetValue(netId, out var id) && id == cardId;
 
         public IEnumerable<KeyValuePair<uint, List<GameCard>>> AllHands => _hands;
     }

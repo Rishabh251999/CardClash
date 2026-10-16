@@ -1,5 +1,8 @@
+using System;
+using System.Xml;
 using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace CardClash
 {
@@ -9,10 +12,23 @@ namespace CardClash
         #region UI References
 
         [Header("UI References")]
-
-        [SerializeField] private TextMeshProUGUI _notificationText1;
-        [SerializeField] private TextMeshProUGUI _notificationText2;
+        [SerializeField] private Image _icon;
+        [SerializeField] private Image _background;
+        [Space(2.5f)]
+        [SerializeField] private TextMeshProUGUI _notificationText;
         private CanvasGroup _canvasGroup;
+
+        #endregion
+
+        #region Inspector - Notification States
+
+        [Space(5f)]
+        [Header("Notification States")]
+        [SerializeField] private NotificationState _redState;
+        [SerializeField] private NotificationState _blueState;
+        [SerializeField] private NotificationState _greenState;
+        [SerializeField] private NotificationState _yellowState;
+        [SerializeField] private NotificationState _lastCardState;
 
         #endregion
 
@@ -25,21 +41,43 @@ namespace CardClash
             SetVisible(false);
         }
 
-        public void Show(string text1, string text2, Color color)
+        public void Show(NotificationType type, string text)
         {
-            if (_notificationText1 is not { } || _notificationText2 is not { })
+            var state = type switch
+            {
+                NotificationType.Red => _redState,
+                NotificationType.Blue => _blueState,
+                NotificationType.Green => _greenState,
+                NotificationType.Yellow => _yellowState,
+                NotificationType.LastCard => _lastCardState,
+                _ => null
+            };
+
+            Show(state, text);
+        }
+
+        private void Show(NotificationState state, string text)
+        {
+            if (_notificationText is not { } || _icon is not { } || _background is not { })
                 return;
 
             SetVisible(true);
 
-            _notificationText1.SetText(text1);
+            _icon.sprite = state.Icon;
+            _icon.enabled = state.Icon is { };
 
-            _notificationText2.color = color;
-            _notificationText2.SetText(text2);
+            _background.sprite = state.background;
+
+            _notificationText.SetText(text);
         }
 
         public void Hide()
         {
+            _icon.sprite = null;
+            _background.sprite = null;
+
+            _notificationText.SetText(string.Empty);
+
             SetVisible(false);
         }
 
@@ -51,5 +89,13 @@ namespace CardClash
         }
 
         #endregion
+    }
+
+    [Serializable]
+    public record NotificationState
+    {
+        public NotificationType Type;
+        public Sprite background;
+        public Sprite Icon;
     }
 }

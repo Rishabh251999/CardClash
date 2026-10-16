@@ -1,0 +1,118 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &9178163382460702771
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 3332562425670456021}
+  - component: {fileID: 1236891501763999914}
+  - component: {fileID: 3397338843105905382}
+  - component: {fileID: 5696228130639737581}
+  m_Layer: 5
+  m_Name: Reverse Card Effect
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!224 &3332562425670456021
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9178163382460702771}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 512, y: 512}
+  m_Pivot: {x: 0.5, y: 0.5}
+--- !u!222 &1236891501763999914
+CanvasRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9178163382460702771}
+  m_CullTransparentMesh: 1
+--- !u!114 &3397338843105905382
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9178163382460702771}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
+  m_Material: {fileID: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_RaycastTarget: 1
+  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
+  m_Maskable: 1
+  m_OnCullStateChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  m_Sprite: {fileID: 0}
+  m_Type: 0
+  m_PreserveAspect: 0
+  m_FillCenter: 1
+  m_FillMethod: 4
+  m_FillAmount: 1
+  m_FillClockwise: 1
+  m_FillOrigin: 0
+  m_UseSpriteMesh: 0
+  m_PixelsPerUnitMultiplier: 1
+--- !u!114 &5696228130639737581
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9178163382460702771}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 80fe787c497d3414ea4bee36adf87afb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CardClash.SpriteFlipbook
+  _frames:
+  - {fileID: 21300000, guid: c17bd686129c1cb4b8125cc1a21cb306, type: 3}
+  - {fileID: 21300000, guid: 1b85b901ffc9ce04dbf56d54b4f48326, type: 3}
+  - {fileID: 21300000, guid: 2662f8c203d561342891085bf6569e96, type: 3}
+  - {fileID: 21300000, guid: a9c4163df7526444b85bca1c586ec90c, type: 3}
+  - {fileID: 21300000, guid: 3ae32b8d662646f459a8e221c26f816f, type: 3}
+  - {fileID: 21300000, guid: 4baa31be350e173478a8bdc6edb04913, type: 3}
+  - {fileID: 21300000, guid: 2eccee7d193c43b40bc68acc43078bbf, type: 3}
+  - {fileID: 21300000, guid: fca1b6f8c2bebd34b9789976418484dc, type: 3}
+  - {fileID: 21300000, guid: 2ea5aa7f172156a418bacac671f8d4f1, type: 3}
+  - {fileID: 21300000, guid: 0a8600d708558cc43a4feda0b3af6d41, type: 3}
+  - {fileID: 21300000, guid: 9460b165f31c9584692dab9e0f469482, type: 3}
+  - {fileID: 21300000, guid: c6857d283527776438fbf49914b3f00c, type: 3}
+  - {fileID: 21300000, guid: 419c0dc32a95cf041b07535224f923fb, type: 3}
+  - {fileID: 21300000, guid: 40f49cdfde3e6f443b85d4a69ea1b53f, type: 3}
+  - {fileID: 21300000, guid: 1ef0b8af9f722d4499e0c76f74a4611e, type: 3}
+  - {fileID: 21300000, guid: 95afd0f277dc85a4fa32ee0ce49213ef, type: 3}
+  - {fileID: 21300000, guid: 6d979505ad03f9d4ab230abbd1e3eb3a, type: 3}
+  - {fileID: 21300000, guid: e4ccbe8163eec284a8bdf5c7044e6e97, type: 3}
+  - {fileID: 21300000, guid: 0f69f518f4b3f6545a99767042ce912e, type: 3}
+  - {fileID: 21300000, guid: 9cdcc015aae5437408d4fbde2a61d349, type: 3}
+  - {fileID: 21300000, guid: 53992347d3629d541919dd419210aa44, type: 3}
+  - {fileID: 21300000, guid: 30b3b739db04a1642bb2ceb33c071c9b, type: 3}
+  - {fileID: 21300000, guid: 16bad38e86670114090e80bc91a5b4af, type: 3}
+  - {fileID: 21300000, guid: 23d4119559f95034b87d2fc53f2bfa7c, type: 3}
+  _fps: 24
+  _keepLastFrame: 0
+  _playOnEnable: 0

@@ -75,11 +75,15 @@ namespace CardClash
     [Serializable]
     public struct PlayerRoomInfo
     {
+        public int avatarId;
         public int playerId;
         public int cardCount;
+
         public bool isReady;
         public bool isOwner;
+
         public Guid roomCode;
+
         public string playerName;
         public string sessionId;
     }
@@ -90,8 +94,10 @@ namespace CardClash
         public bool isOwner;
         public bool hasCalledLastCard;
 
+        public int avatarId;
         public int cardCount;
         public uint connectionId;
+
         public string playerName;
     }
 
@@ -100,6 +106,7 @@ namespace CardClash
     {
         public string PlayerName;
         public int PlayerScore;
+        public int AvatarId;
     }
 
     /// <summary>
@@ -264,19 +271,36 @@ namespace CardClash
         public string SessionId;
     }
 
+    [Serializable]
+    public struct PendingDrawState
+    {
+        public int Count;
+        public CardType Type;
+    }
+
     #endregion
 
     #region Enums
 
     public enum ScreenType
     {
-        Loading,
+        Room,
+        Game,
         Login,
         Lobby,
+        Profile,
+        Loading,
         RoomInfo,
-        Room,
         ConnectionError,
-        Game,
+    }
+
+    public enum NotificationType
+    {
+        Red, 
+        Blue,
+        Green,
+        Yellow,
+        LastCard
     }
 
     #endregion
@@ -514,6 +538,576 @@ namespace CardClash
 
             _sendRoomList();
         }
+    }
+
+    internal sealed class RoomService
+    {
+        private readonly ServerRoomRepository _repo;
+        private readonly Action _sendRoomList;
+
+        public RoomService(ServerRoomRepository repo, Action sendRoomList)
+        {
+            _repo = repo;
+            _sendRoomList = sendRoomList;
+        }
+
+        #region Create Room
+
+        internal void CreateRoom(
+            NetworkConnectionToClient conn,
+            int maxPlayers,
+            int startingCards)
+        {
+            if (conn == null ||
+                !_repo.PlayerInfos.TryGetValue(conn, out var playerInfo))
+                return;
+
+            if (_repo.PlayerRooms.ContainsKey(conn))
+                return;
+
+            if (maxPlayers < 2 || startingCards < 1)
+            {
+                SendError(conn, "Invalid room settings.");
+                return;
+            }
+
+            var roomCode = Guid.NewGuid();
+
+            _repo.RoomConnections.Add(
+                roomCode,
+                new() { conn });
+
+            _repo.PlayerRooms.Add(conn, roomCode);
+
+            _repo.OpenRooms.Add(roomCode, new RoomInfo
+            {
+                roomCode = roomCode,
+                maxPlayers = maxPlayers,
+                startingCards = startingCards,
+                playerCount = 1,
+                isStarted = false
+            });
+
+            playerInfo.isReady = false;
+            playerInfo.isOwner = true;
+            playerInfo.roomCode = roomCode;
+            playerInfo.avatarId = 1;
+
+            _repo.PlayerInfos[conn] = playerInfo;
+
+            var players = GetRoomPlayers(roomCode);
+
+            conn.Send(new ClientRoomMessage
+            {
+                clientRoomOperation = ClientRoomOperation.Created,
+                roomCode = roomCode,
+                playerInfo = players,
+                maxPlayers = maxPlayers
+            });
+
+            _sendRoomList?.Invoke();
+        }
+
+        #endregion
+
+        #region Join Room
+
+        internal void JoinRoom(
+            NetworkConnectionToClient conn,
+            Guid roomCode)
+        {
+            if (conn == null ||
+                !_repo.PlayerInfos.TryGetValue(conn, out var playerInfo))
+                return;
+
+            if (_repo.PlayerRooms.ContainsKey(conn))
+            {
+                SendError(conn, "You are already in a room.");
+                return;
+            }
+
+            if (!_repo.RoomConnections.TryGetValue(
+                    roomCode, out var connections) ||
+                !_repo.OpenRooms.TryGetValue(
+                    roomCode, out var roomInfo))
+            {
+                SendError(conn, $"Room {roomCode} not found.");
+                return;
+            }
+
+            if (connections.Count >= roomInfo.maxPlayers)
+            {
+                SendError(conn, $"Room {roomCode} is full.");
+                return;
+            }
+
+            connections.Add(conn);
+            _repo.PlayerRooms[conn] = roomCode;
+
+            playerInfo.isReady = false;
+            playerInfo.isOwner = false;
+            playerInfo.roomCode = roomCode;
+            playerInfo.avatarId = connections.Count;
+
+            _repo.PlayerInfos[conn] = playerInfo;
+
+            roomInfo.playerCount = connections.Count;
+            _repo.OpenRooms[roomCode] = roomInfo;
+
+            var players = GetRoomPlayers(roomCode);
+
+            conn.Send(new ClientRoomMessage
+            {
+                clientRoomOperation = ClientRoomOperation.Joined,
+                roomCode = roomCode,
+                playerInfo = players,
+                maxPlayers = roomInfo.maxPlayers
+            });
+
+            BroadcastRoomUpdate(roomCode);
+            _sendRoomList?.Invoke();
+        }
+
+        #endregion
+
+        #region Leave Room
+
+        internal void LeaveRoom(NetworkConnectionToClient conn)
+        {
+            if (conn == null ||
+                !_repo.PlayerInfos.TryGetValue(conn, out var playerInfo))
+                return;
+
+            if (playerInfo.isOwner)
+            {
+                CancelRoom(conn);
+                return;
+            }
+
+            var roomCode = playerInfo.roomCode;
+
+            if (roomCode == Guid.Empty ||
+                !_repo.RoomConnections.TryGetValue(
+                    roomCode, out var connections))
+                return;
+
+            connections.Remove(conn);
+            _repo.PlayerRooms.Remove(conn);
+
+            playerInfo.isReady = false;
+            playerInfo.isOwner = false;
+            playerInfo.roomCode = Guid.Empty;
+
+            _repo.PlayerInfos[conn] = playerInfo;
+
+            conn.Send(new ClientRoomMessage
+            {
+                clientRoomOperation = ClientRoomOperation.Left
+            });
+
+            if (connections.Count == 0)
+            {
+                _repo.RoomConnections.Remove(roomCode);
+                _repo.OpenRooms.Remove(roomCode);
+            }
+            else
+            {
+                if (_repo.OpenRooms.TryGetValue(
+                        roomCode, out var roomInfo))
+                {
+                    roomInfo.playerCount = connections.Count;
+                    _repo.OpenRooms[roomCode] = roomInfo;
+                }
+
+                BroadcastRoomUpdate(roomCode);
+            }
+
+            _sendRoomList?.Invoke();
+        }
+
+        #endregion
+
+        #region Cancel Room
+
+        internal void CancelRoom(NetworkConnectionToClient conn)
+        {
+            if (conn == null ||
+                !_repo.PlayerInfos.TryGetValue(conn, out var ownerInfo) ||
+                !ownerInfo.isOwner)
+                return;
+
+            if (!_repo.PlayerRooms.TryGetValue(conn, out var roomCode) ||
+                !_repo.RoomConnections.TryGetValue(
+                    roomCode, out var connections))
+                return;
+
+            // Remove all waiting-room records.
+            _repo.RoomConnections.Remove(roomCode);
+            _repo.OpenRooms.Remove(roomCode);
+
+            foreach (var playerConn in connections.ToArray())
+            {
+                if (!_repo.PlayerInfos.TryGetValue(
+                        playerConn, out var playerInfo))
+                    continue;
+
+                playerInfo.isReady = false;
+                playerInfo.isOwner = false;
+                playerInfo.roomCode = Guid.Empty;
+
+                _repo.PlayerInfos[playerConn] = playerInfo;
+                _repo.PlayerRooms.Remove(playerConn);
+
+                playerConn.Send(new ClientRoomMessage
+                {
+                    clientRoomOperation =
+                        playerConn == conn
+                            ? ClientRoomOperation.Cancelled
+                            : ClientRoomOperation.Left
+                });
+            }
+
+            _sendRoomList?.Invoke();
+        }
+
+        #endregion
+
+        #region Ready
+
+        internal void ToggleReady(
+            NetworkConnectionToClient conn,
+            Guid roomCode)
+        {
+            if (conn == null ||
+                !_repo.PlayerInfos.TryGetValue(conn, out var playerInfo))
+                return;
+
+            // The player must belong to the specified room.
+            if (playerInfo.roomCode != roomCode ||
+                !_repo.RoomConnections.TryGetValue(
+                    roomCode, out var connections) ||
+                !connections.Contains(conn) ||
+                !_repo.OpenRooms.TryGetValue(
+                    roomCode, out var roomInfo))
+                return;
+
+            playerInfo.isReady = !playerInfo.isReady;
+            _repo.PlayerInfos[conn] = playerInfo;
+
+            BroadcastRoomUpdate(roomCode);
+        }
+
+        #endregion
+
+        #region Helpers
+
+        private PlayerRoomInfo[] GetRoomPlayers(Guid roomCode)
+        {
+            if (!_repo.RoomConnections.TryGetValue(
+                    roomCode, out var connections))
+                return Array.Empty<PlayerRoomInfo>();
+
+            return connections
+                .Where(c => _repo.PlayerInfos.ContainsKey(c))
+                .Select(c => _repo.PlayerInfos[c])
+                .ToArray();
+        }
+
+        private void BroadcastRoomUpdate(Guid roomCode)
+        {
+            if (!_repo.RoomConnections.TryGetValue(
+                    roomCode, out var connections))
+                return;
+
+            var players = GetRoomPlayers(roomCode);
+
+            _repo.OpenRooms.TryGetValue(
+                roomCode, out var roomInfo);
+
+            foreach (var playerConn in connections.ToArray())
+            {
+                playerConn.Send(new ClientRoomMessage
+                {
+                    clientRoomOperation = ClientRoomOperation.UpdateRoom,
+                    playerInfo = players,
+                    maxPlayers = roomInfo.maxPlayers
+                });
+            }
+        }
+
+        private void SendError(NetworkConnectionToClient conn, string message)
+        {
+            conn.Send(new ClientRoomMessage
+            {
+                clientRoomOperation = ClientRoomOperation.Error,
+                errorMessage = message
+            });
+        }
+
+        #endregion
+    }
+
+    internal sealed class MatchService
+    {
+        private readonly ServerRoomRepository _repo;
+        private readonly CardGameController _matchControllerPrefab;
+        private readonly System.Action _sendRoomList;
+
+        public MatchService(
+            ServerRoomRepository repo,
+            CardGameController matchControllerPrefab,
+            System.Action sendRoomList)
+        {
+            _repo = repo;
+            _matchControllerPrefab = matchControllerPrefab;
+            _sendRoomList = sendRoomList;
+        }
+
+        #region Start Match
+
+        internal void StartMatch(NetworkConnectionToClient conn)
+        {
+            if (!NetworkServer.active || conn == null)
+                return;
+
+            // Only the room owner can start a match.
+            if (!_repo.PlayerInfos.TryGetValue(conn, out var ownerInfo) ||
+                !ownerInfo.isOwner)
+                return;
+
+            if (!_repo.PlayerRooms.TryGetValue(conn, out var roomCode))
+                return;
+
+            if (!_repo.OpenRooms.TryGetValue(roomCode, out var roomInfo) ||
+                !_repo.RoomConnections.TryGetValue(
+                    roomCode, out var connections))
+                return;
+
+            var players = connections.ToArray();
+
+            // Validate room state before spawning network objects.
+            if (players.Length < 2 ||
+                players.Length > roomInfo.maxPlayers)
+                return;
+
+            if (players.Any(player =>
+                    player == null ||
+                    !_repo.PlayerInfos.TryGetValue(
+                        player, out var info) ||
+                    info.roomCode != roomCode))
+            {
+                Debug.LogWarning(
+                    $"[Server] Invalid player data in room {roomCode}.");
+                return;
+            }
+
+            if (players.Any(player =>
+                    !_repo.PlayerInfos[player].isReady))
+            {
+                Debug.LogWarning(
+                    $"[Server] Cannot start room {roomCode}: " +
+                    "not all players are ready.");
+                return;
+            }
+
+            if (_matchControllerPrefab == null ||
+                NetworkManager.singleton == null ||
+                NetworkManager.singleton.playerPrefab == null)
+            {
+                Debug.LogError(
+                    "[Server] Match controller or player prefab is missing.");
+                return;
+            }
+
+            // Validate required NetworkMatch components before spawning.
+            if (!_matchControllerPrefab.TryGetComponent<NetworkMatch>(
+                    out _))
+            {
+                Debug.LogError(
+                    "[Server] Match controller prefab requires NetworkMatch.");
+                return;
+            }
+
+            if (!NetworkManager.singleton.playerPrefab.TryGetComponent<NetworkMatch>(
+                    out _))
+            {
+                Debug.LogError(
+                    "[Server] Player prefab requires NetworkMatch.");
+                return;
+            }
+
+            CardGameController matchController = null;
+
+            try
+            {
+                // Create the match controller.
+                matchController = UnityEngine.Object.Instantiate(
+                    _matchControllerPrefab);
+
+                matchController.GetComponent<NetworkMatch>().matchId =
+                    roomCode;
+
+                NetworkServer.Spawn(matchController.gameObject);
+
+                _repo.MatchControllers.Add(
+                    roomCode, matchController);
+
+                // Build the deck for this match.
+                CardDeck deck = new();
+                deck.BuildDeck();
+
+                _repo.RoomDecks.Add(roomCode, deck);
+
+                // Create a match player for every connection.
+                foreach (var playerConn in players)
+                {
+                    var player = UnityEngine.Object.Instantiate(NetworkManager.singleton.playerPrefab);
+
+                    player.GetComponent<NetworkMatch>().matchId = roomCode;
+
+                    if (playerConn.identity != null)
+                    {
+                        NetworkServer.ReplacePlayerForConnection(
+                            playerConn,
+                            player,
+                            ReplacePlayerOptions.Destroy);
+                    }
+                    else
+                    {
+                        NetworkServer.AddPlayerForConnection(
+                            playerConn,
+                            player);
+                    }
+
+                    matchController.AddPlayer(
+                        playerConn,
+                        _repo.PlayerInfos[playerConn]);
+
+                    var info = _repo.PlayerInfos[playerConn];
+                    info.isReady = false;
+                    _repo.PlayerInfos[playerConn] = info;
+
+                    playerConn.Send(new ClientRoomMessage
+                    {
+                        clientRoomOperation = ClientRoomOperation.Started,
+                        roomCode = roomCode
+                    });
+                }
+
+                // Start gameplay after registering every player.
+                matchController.StartGame(
+                    deck, roomInfo.startingCards);
+
+                // Remove all waiting-room mappings.
+                foreach (var playerConn in players)
+                    _repo.PlayerRooms.Remove(playerConn);
+
+                _repo.OpenRooms.Remove(roomCode);
+                _repo.RoomConnections.Remove(roomCode);
+
+                _sendRoomList?.Invoke();
+
+                Debug.Log(
+                    $"[Server] Match started for room {roomCode}.");
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogException(exception);
+
+                // Avoid retaining a partially registered match.
+                _repo.MatchControllers.Remove(roomCode);
+                _repo.RoomDecks.Remove(roomCode);
+
+                if (matchController != null)
+                {
+                    matchController.EndMatch();
+
+                    if (matchController.gameObject != null)
+                        NetworkServer.Destroy(matchController.gameObject);
+                }
+
+                // Do not remove the waiting-room records here:
+                // they may be needed to recover from a failed startup.
+            }
+        }
+
+        #endregion
+
+        #region Quit Match
+
+        internal void QuitMatch(NetworkConnectionToClient conn, CardGameController controller)
+        {
+            if (!NetworkServer.active ||
+                conn == null ||
+                controller == null)
+                return;
+
+            if (!_repo.PlayerInfos.TryGetValue(
+                    conn, out var playerInfo))
+                return;
+
+            Debug.Log(
+                $"[Server] Player quitting match. " +
+                $"Connection={conn.connectionId}, " +
+                $"Owner={playerInfo.isOwner}");
+
+            // Owner quitting ends the match for everyone.
+            if (playerInfo.isOwner)
+            {
+                EndMatch(controller);
+                return;
+            }
+
+            // Remove the player from the active game.
+            controller.HandlePlayerQuit(conn);
+
+            playerInfo.isReady = false;
+            playerInfo.roomCode = System.Guid.Empty;
+            _repo.PlayerInfos[conn] = playerInfo;
+
+            _repo.PlayerRooms.Remove(conn);
+
+            conn.Send(new ClientRoomMessage
+            {
+                clientRoomOperation = ClientRoomOperation.Left
+            });
+
+            _sendRoomList?.Invoke();
+        }
+
+        #endregion
+
+        #region End Match
+
+        internal void EndMatch(CardGameController controller)
+        {
+            if (!NetworkServer.active || controller == null)
+                return;
+
+            if (!controller.TryGetComponent<NetworkMatch>(
+                    out var networkMatch))
+            {
+                Debug.LogWarning(
+                    "[Server] Cannot end match: NetworkMatch is missing.");
+                return;
+            }
+
+            var roomCode = networkMatch.matchId;
+
+            Debug.Log($"[Server] Ending match for room {roomCode}.");
+
+            controller.EndMatch();
+
+            _repo.MatchControllers.Remove(roomCode);
+            _repo.RoomDecks.Remove(roomCode);
+
+            if (controller != null)
+                NetworkServer.Destroy(controller.gameObject);
+
+            _sendRoomList?.Invoke();
+        }
+
+        #endregion
     }
 
     #endregion
