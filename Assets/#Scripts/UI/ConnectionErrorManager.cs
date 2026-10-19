@@ -20,11 +20,34 @@ namespace CardClash
 
         #endregion
 
+        #region Gameobjects
+
+        [SerializeField] private GameObject _spinner;
+
+        #endregion
+
+        #region Settings
+
+        [Header("Spinner Settings")]
+        [SerializeField] private float _spinnerRotationSpeed = 200.0f;
+
+        #endregion
+
+        #region Runtime State
+
+        private RectTransform _spinnerRectTransform;
+        private Coroutine _spinnerCoroutine;
+
+        #endregion
+
         #region Unity Lifecycle
 
-        private void Awake()
+        private void Start()
         {
             _retryButton.onClick.AddListener(RetryConnection);
+
+            if (_spinner is { })
+                _spinnerRectTransform = _spinner.GetComponent<RectTransform>();
         }
 
         private void OnDestroy()
@@ -38,9 +61,30 @@ namespace CardClash
             StartCoroutine(IE_RetryConnection());
         }
 
+        private void StartSpinner()
+        {
+            if (_spinner is not { })
+            {
+                return;
+            }
+
+            _spinnerCoroutine ??= StartCoroutine(IE_RotateSpinner());
+        }
+
+        private void StopSpinner()
+        {
+            if (_spinnerCoroutine is { })
+            {
+                StopCoroutine(_spinnerCoroutine);
+                _spinnerCoroutine = null;
+            }
+        }
+
         private IEnumerator IE_RetryConnection()
         {
             _retryButton.interactable = false;
+
+            StartSpinner();
 
             if (NetworkServer.active)
             {
@@ -60,7 +104,18 @@ namespace CardClash
 
             yield return _waitForSeconds5_0;
 
+            StopSpinner();
+
             _retryButton.interactable = true;
+        }
+
+        private IEnumerator IE_RotateSpinner()
+        {
+            while (true)
+            {
+                _spinnerRectTransform.Rotate(0f, 0f, -_spinnerRotationSpeed * Time.deltaTime);
+                yield return null;
+            }
         }
 
         #endregion

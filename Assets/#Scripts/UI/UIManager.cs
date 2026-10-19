@@ -28,6 +28,8 @@ namespace CardClash
 
         #region Unity Lifecycle
 
+        private void Awake() => SetMaxRefreshRate();
+
         private void Start()
         {
             if (Application.isBatchMode)
@@ -44,6 +46,17 @@ namespace CardClash
             {
                 SetState(ScreenType.Login,true);
             }
+        }
+
+        private void SetMaxRefreshRate()
+        {
+            var maxRate = Screen.resolutions.Length > 0 ? Screen.resolutions[^1].refreshRateRatio.value 
+                : Screen.currentResolution.refreshRateRatio.value;
+
+            Application.targetFrameRate = Mathf.CeilToInt((float)maxRate);
+
+            // Disable VSync so targetFrameRate actually takes effect
+            QualitySettings.vSyncCount = 0;
         }
 
         #endregion

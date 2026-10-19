@@ -11,13 +11,14 @@ namespace CardClash
 {
     public class CardNetworkManager : NetworkManager
     {
-        private readonly WaitForSeconds _waitForSeconds0_75 = new(2f);
+        private readonly WaitForSeconds _waitForSeconds0_75 = new(0.75f);
 
         // Overrides the base singleton so we don't
         // have to cast to this type everywhere.
         public static CardNetworkManager Singleton => (CardNetworkManager)singleton;
 
         [SerializeField] private UIManager _uiManager;
+        [SerializeField] private LoadingManager _loadingManager;
 
         public GameManager _gameManager;
 
@@ -211,9 +212,15 @@ namespace CardClash
 
             _gameManager.OnClientConnect();
 
-            _uiManager.SetState(ScreenType.Lobby, false);
+            _loadingManager.OnLoadingComplete += HandleLoadingBarComplete;      
 
             Debug.Log("CardNetworkManager: Client connected to server.");
+        }
+
+        private void HandleLoadingBarComplete()
+        {
+            _loadingManager.OnLoadingComplete -= HandleLoadingBarComplete;
+            _uiManager.SetState(ScreenType.Lobby, false);
         }
 
         /// <summary>

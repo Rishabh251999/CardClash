@@ -288,7 +288,7 @@ namespace CardClash
         Game,
         Login,
         Lobby,
-        Profile,
+        Settings,
         Loading,
         RoomInfo,
         ConnectionError,

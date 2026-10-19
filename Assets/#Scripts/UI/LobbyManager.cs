@@ -88,7 +88,7 @@ namespace CardClash
 
         private void OnProfileButtonClick()
         {
-            _uiManager.SetState(ScreenType.Profile, true);
+            _uiManager.SetState(ScreenType.Settings, true);
         }
 
 

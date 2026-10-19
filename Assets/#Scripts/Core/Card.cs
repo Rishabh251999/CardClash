@@ -14,7 +14,7 @@ namespace CardClash
     {
         #region constants/readonly
 
-        private const float DragFollowRate = 28f;        // higher = tighter follow
+        private const float DragFollowRate = 45f;        // higher = tighter follow
         private const float DragTiltMax = 25f;
         private const float DragTiltFactor = 0.08f;
         private const float DragTiltSmoothing = 14f;

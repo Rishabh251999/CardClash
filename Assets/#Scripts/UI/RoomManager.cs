@@ -9,11 +9,19 @@ namespace CardClash
 {
     public class RoomManager : MonoBehaviour
     {
+        #region Constants/Readonly
+
+        private readonly string _playerJoinedSound = "player_join";
+        private readonly string _playerLeftSound = "player_leave";
+
+        #endregion
+
         #region Scripts
 
         [Header("Script References")]
 
         [SerializeField] private PlayerGUI _playerPrefab;
+        [SerializeField] private AudioManager _audioManager;
 
         #endregion
 
@@ -51,6 +59,8 @@ namespace CardClash
         private bool _owner;
 
         private Guid _roomCode = Guid.Empty;
+
+        private int _previousPlayerCount = -1;
 
         private readonly List<PlayerGUI> _slots = new();
 
@@ -109,10 +119,8 @@ namespace CardClash
         private void OnCancelButtonClicked()
         {
             if (!_owner || _roomCode == Guid.Empty)
-            {
-                Debug.LogWarning("Not the room owner");
                 return;
-            }
+
             NetworkClient.Send(new ServerRoomMessage
             {
                 serverRoomOperation = ServerRoomOperation.Cancel
@@ -131,6 +139,37 @@ namespace CardClash
             {
                 serverRoomOperation = ServerRoomOperation.Leave
             });
+        }
+
+        private void PlayPlayerCountChangeSound(int count)
+        {
+            Debug.Log($"[PlayerCountSound] Current count: {count}, Previous count: {_previousPlayerCount}");
+
+            if (_previousPlayerCount >= 0 && _audioManager != null)
+            {
+                if (count > _previousPlayerCount)
+                {
+                    Debug.Log($"[PlayerCountSound] Player joined. Playing sound: {_playerJoinedSound}");
+                    _audioManager.PlaySoundEffect(_playerJoinedSound);
+                }
+                else if (count < _previousPlayerCount)
+                {
+                    Debug.Log($"[PlayerCountSound] Player left. Playing sound: {_playerLeftSound}");
+                    _audioManager.PlaySoundEffect(_playerLeftSound);
+                }
+                else
+                {
+                    Debug.Log("[PlayerCountSound] Player count unchanged. No sound played.");
+                }
+            }
+            else
+            {
+                Debug.LogWarning(
+                    $"[PlayerCountSound] Sound skipped. Previous count: {_previousPlayerCount}, " +
+                    $"AudioManager assigned: {_audioManager != null}");
+            }
+
+            _previousPlayerCount = count;
         }
 
         #endregion
@@ -166,6 +205,8 @@ namespace CardClash
 
             _startButton.interactable = everyoneReady && _owner && count == maxPlayers;
             _playerCountText.SetText("{0} / {1}", count, maxPlayers);
+
+            PlayPlayerCountChangeSound(count);
         }
 
         [ClientCallback]
