@@ -48,6 +48,8 @@ namespace CardClash
 
         private void Awake()
         {
+            SetMaxRefreshRate();
+
             _roomService = new(_serverRepo, () => SendRoomList());
 
             _matchService = new(_serverRepo, matchControllerPrefab, () => SendRoomList());
@@ -61,6 +63,17 @@ namespace CardClash
         {
             _serverRepo.Clear();
             playerIndex = 1;
+        }
+
+        private void SetMaxRefreshRate()
+        {
+            var maxRate = Screen.resolutions.Length > 0 ? Screen.resolutions[^1].refreshRateRatio.value
+                : Screen.currentResolution.refreshRateRatio.value;
+
+            Application.targetFrameRate = Mathf.CeilToInt((float)maxRate);
+
+            // Disable VSync so targetFrameRate actually takes effect
+            QualitySettings.vSyncCount = 0;
         }
 
         #endregion
@@ -379,11 +392,13 @@ namespace CardClash
                     break;
 
                 case ClientDeckOperation.CardPlayed:
+                    AudioManager.Instance.PlaySoundEffect("card_play");
                     gc.RemoveHandCard(msg.TopDiscardCard.Id);
                     gc.RefreshHandInteractability(false);
                     break;
 
                 case ClientDeckOperation.CardDrawn:
+                    AudioManager.Instance.PlaySoundEffect("card_draw");
                     gc.ShowDealtCards(msg.Cards, false);
                     gc.OnDrawnCardReceived(msg.CanPlayDrawnCard, msg.Cards[0]);
                     break;
@@ -395,6 +410,7 @@ namespace CardClash
                     break;
 
                 case ClientDeckOperation.LastCardCalled:
+                    AudioManager.Instance.PlaySoundEffect("last_card");
                     gc.RefreshLastCardButtonInteractable();
                     break;
 
@@ -453,6 +469,8 @@ namespace CardClash
         {
             Debug.Log("[Client] OnRoomLeft called - returning to lobby");
 
+            var wasInMatch = CardGameController.Instance is { };
+
             if (CardGameController.Instance != null)
             {
                 Debug.Log("[Client] Destroying CardGameController instance");
@@ -464,6 +482,9 @@ namespace CardClash
             _uiManager.SetState(ScreenType.Lobby, true);
 
             _lobbyManager.UpdateRoomList(_clientRepo.OpenRooms);
+
+            if(wasInMatch)
+                AudioManager.Instance.PlayTrack("menu_loop");
         }
 
         #endregion

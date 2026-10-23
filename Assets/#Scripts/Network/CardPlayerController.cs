@@ -8,8 +8,6 @@ namespace CardClash
     {
         #region Constants/Readonly
 
-        private readonly WaitForSeconds _waitForSeconds0_5 = new(0.5f);
-
         #endregion
 
         #region Unity Lifecycle
@@ -37,10 +35,9 @@ namespace CardClash
 
         private IEnumerator ShowColorPickerDelayed(Card card, CardGameController controller)
         {
-            yield return _waitForSeconds0_5;
+            yield return card.SettleInDropZone(controller.CardTargetTransform);
 
-            controller.ShowColorPicker(
-                chosenColor => SendPlay(card, chosenColor));
+            controller.ShowColorPicker(chosenColor => SendPlay(card, chosenColor));
         }
 
         private void SendPlay(Card card, CardColor chosenColor)

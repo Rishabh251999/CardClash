@@ -9,7 +9,7 @@ namespace CardClash
     public class RoomInfoPanel : MonoBehaviour
     {
         #region Constants
-        private const int MinPlayers = 3;
+        private const int MinPlayers = 2;
         private const int MaxPlayers = 8;
         private const int DefaultPlayers = 4;
 
@@ -47,11 +47,8 @@ namespace CardClash
             PopulateDropdown(_maxPlayers, MinPlayers, MaxPlayers, DefaultPlayers);
             PopulateDropdown(_startingCards, MinStartingCards, MaxStartingCards, DefaultStartingCards);
 
-            if(_backButton is { })
-                _backButton.onClick.AddListener(OnBackButtonClicked);
-
-            if(_createButton is { })
-                _createButton.onClick.AddListener(OnCreateButtonClicked);
+            _backButton.AddListenerSafe(OnBackButtonClicked);
+            _createButton.AddListenerSafe(OnCreateButtonClicked);
 
             if (_uiManager is { })
                 _uiManager.OnStateChanged += OnStateChanged;
@@ -59,11 +56,8 @@ namespace CardClash
 
         private void OnDestroy()
         {
-            if (_backButton is { })
-                _backButton.onClick.RemoveListener(OnBackButtonClicked);
-
-            if (_createButton is { })
-                _createButton.onClick.RemoveListener(OnCreateButtonClicked);
+            _backButton.RemoveListenerSafe(OnBackButtonClicked);
+            _createButton.RemoveListenerSafe(OnCreateButtonClicked);
 
             if (_uiManager is { })
                 _uiManager.OnStateChanged -= OnStateChanged;
@@ -86,7 +80,10 @@ namespace CardClash
             dropdown.RefreshShownValue();
         }
 
-        private void OnBackButtonClicked() => _uiManager.SetState(ScreenType.Lobby, true);
+        private void OnBackButtonClicked()
+        {
+            _uiManager.SetState(ScreenType.Lobby, true);
+        }
 
         private void OnCreateButtonClicked()
         {

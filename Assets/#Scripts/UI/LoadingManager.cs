@@ -46,6 +46,7 @@ namespace CardClash
         private bool _isLoadingState;
         private bool _reachedFull;
         private bool _completionRaised;
+        private bool _startLoading;
         private float _fullHoldTimer;
 
         #endregion
@@ -58,6 +59,7 @@ namespace CardClash
                 return;
 
             _uiManager.OnStateChanged += HandleStateChange;
+            _uiManager.OnScreenOpened += HandleScreenOpened;
 
             if (_loadingSlider is { } slider)
                 slider.fillAmount = 0f;
@@ -71,14 +73,14 @@ namespace CardClash
             if (_loadingSlider is not { } slider)
                 return;
 
-            // Phase 1: fake loading fills up to WaitingProgress independently of the connection.
+            if (!_startLoading)
+                return;
+
             UpdateFakeLoading(slider);
 
             if (_fakeLoadingComplete && _isLoadingState)
                 ConnectToServer();
 
-            // Phase 2: once we've started connecting, keep animating the bar towards full
-            // instead of leaving it stuck at WaitingProgress, so it never appears frozen.
             if (_connectionStarted)
                 UpdateConnectingProgress(slider);
         }
@@ -89,18 +91,14 @@ namespace CardClash
                 return;
 
             _uiManager.OnStateChanged -= HandleStateChange;
+            _uiManager.OnScreenOpened -= HandleScreenOpened;
         }
-
-        #endregion
-
-        #region Progress Handling
 
         private void UpdateFakeLoading(Image slider)
         {
             if (_fakeLoadingComplete)
                 return;
 
-            // Fake loading progresses independently.
             slider.fillAmount = Mathf.MoveTowards(slider.fillAmount, WaitingProgress, ProgressSpeed * Time.deltaTime);
 
             if (slider.fillAmount >= WaitingProgress)
@@ -157,6 +155,15 @@ namespace CardClash
         private void HandleStateChange(ScreenType state)
         {
             _isLoadingState = state is ScreenType.Loading;
+
+            if (!_isLoadingState)
+                _startLoading = false;
+        }
+
+        private void HandleScreenOpened(ScreenType screenType)
+        {
+            if (screenType is ScreenType.Loading)
+                _startLoading = true;
         }
 
         #endregion

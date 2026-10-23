@@ -21,7 +21,6 @@ namespace CardClash
         [Header("Script References")]
 
         [SerializeField] private PlayerGUI _playerPrefab;
-        [SerializeField] private AudioManager _audioManager;
 
         #endregion
 
@@ -77,18 +76,18 @@ namespace CardClash
 
         private void Start()
         {
-            _startButton.onClick.AddListener(OnStartButtonClicked);
-            _readyButton.onClick.AddListener(OnReadyButtonClicked);
-            _cancelButton.onClick.AddListener(OnCancelButtonClicked);
-            _leaveButton.onClick.AddListener(OnLeaveButtonClicked);
+            _startButton.AddListenerSafe(OnStartButtonClicked);
+            _readyButton.AddListenerSafe(OnReadyButtonClicked);
+            _cancelButton.AddListenerSafe(OnCancelButtonClicked);
+            _leaveButton.AddListenerSafe(OnLeaveButtonClicked);
         }
 
         private void OnDestroy()
         {
-            _startButton.onClick.RemoveListener(OnStartButtonClicked);
-            _readyButton.onClick.RemoveListener(OnReadyButtonClicked);
-            _cancelButton.onClick.RemoveListener(OnCancelButtonClicked);
-            _leaveButton.onClick.RemoveListener(OnLeaveButtonClicked);
+            _startButton.RemoveListenerSafe(OnStartButtonClicked);
+            _readyButton.RemoveListenerSafe(OnReadyButtonClicked);
+            _cancelButton.RemoveListenerSafe(OnCancelButtonClicked);
+            _leaveButton.RemoveListenerSafe(OnLeaveButtonClicked);
         }
 
         private void OnStartButtonClicked()
@@ -143,30 +142,13 @@ namespace CardClash
 
         private void PlayPlayerCountChangeSound(int count)
         {
-            Debug.Log($"[PlayerCountSound] Current count: {count}, Previous count: {_previousPlayerCount}");
-
-            if (_previousPlayerCount >= 0 && _audioManager != null)
+            if (_previousPlayerCount >= 0)    
             {
                 if (count > _previousPlayerCount)
-                {
-                    Debug.Log($"[PlayerCountSound] Player joined. Playing sound: {_playerJoinedSound}");
-                    _audioManager.PlaySoundEffect(_playerJoinedSound);
-                }
+                    AudioManager.Instance.PlaySoundEffect(_playerJoinedSound);
+
                 else if (count < _previousPlayerCount)
-                {
-                    Debug.Log($"[PlayerCountSound] Player left. Playing sound: {_playerLeftSound}");
-                    _audioManager.PlaySoundEffect(_playerLeftSound);
-                }
-                else
-                {
-                    Debug.Log("[PlayerCountSound] Player count unchanged. No sound played.");
-                }
-            }
-            else
-            {
-                Debug.LogWarning(
-                    $"[PlayerCountSound] Sound skipped. Previous count: {_previousPlayerCount}, " +
-                    $"AudioManager assigned: {_audioManager != null}");
+                    AudioManager.Instance.PlaySoundEffect(_playerLeftSound);
             }
 
             _previousPlayerCount = count;

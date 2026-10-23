@@ -1,3 +1,4 @@
+using Mirror;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -45,20 +46,25 @@ namespace CardClash
 
         private void Start()
         {
-            _backToLobbyButton.onClick.AddListener(OnClickBackToLobby);
-            _playAgainButton.onClick.AddListener(OnClickPlayAgain);
+            _backToLobbyButton.AddListenerSafe(OnClickBackToLobby);
+            _playAgainButton.AddListenerSafe(OnClickPlayAgain);
         }
 
 
         private void OnDestroy()
         {
-            _backToLobbyButton.onClick.RemoveListener(OnClickBackToLobby);
-            _playAgainButton.onClick.RemoveListener(OnClickPlayAgain);
+            _backToLobbyButton.RemoveListenerSafe(OnClickBackToLobby);
+            _playAgainButton.RemoveListenerSafe(OnClickPlayAgain);
         }
 
 
         private void OnClickBackToLobby()
         {
+            NetworkClient.Send(new ServerDeckMessage
+            {
+                serverDeckOperation = ServerDeckOperation.QuitMatch
+            });
+
             HideGameEndScreen();
 
             CardNetworkManager.Singleton._gameManager.OnRoomLeft();
@@ -66,8 +72,6 @@ namespace CardClash
 
         private void OnClickPlayAgain()
         {
-            _playAgainButton.interactable = false;
-
             CardGameController.Instance.CmdRequestPlayAgain();
         }
 
@@ -75,6 +79,8 @@ namespace CardClash
         public void ShowGameEndScreen(IReadOnlyList<GameEndPlayerInfo> standings)
         {
             SetVisible(true);
+
+            _playAgainButton.gameObject.SetActive(false);
 
             var sortedStandings = standings.OrderBy(p => p.PlayerScore).ToList();
 
@@ -98,6 +104,8 @@ namespace CardClash
         {
             SetVisible(false);
             ClearStandingsRows();
+
+            _playAgainButton.gameObject.SetActive(false);
         }
 
         public void ShowPlayAgainButton() => _playAgainButton.gameObject.SetActive(true);

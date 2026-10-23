@@ -21,14 +21,13 @@ namespace CardClash
         public ScreenType ScreenType { get; private set; }
 
         public event Action<ScreenType> OnStateChanged;
+        public event Action<ScreenType> OnScreenOpened;
 
         private readonly Dictionary<CanvasGroup, Coroutine> _activeFades = new();
 
         #endregion
 
         #region Unity Lifecycle
-
-        private void Awake() => SetMaxRefreshRate();
 
         private void Start()
         {
@@ -46,17 +45,6 @@ namespace CardClash
             {
                 SetState(ScreenType.Login,true);
             }
-        }
-
-        private void SetMaxRefreshRate()
-        {
-            var maxRate = Screen.resolutions.Length > 0 ? Screen.resolutions[^1].refreshRateRatio.value 
-                : Screen.currentResolution.refreshRateRatio.value;
-
-            Application.targetFrameRate = Mathf.CeilToInt((float)maxRate);
-
-            // Disable VSync so targetFrameRate actually takes effect
-            QualitySettings.vSyncCount = 0;
         }
 
         #endregion
@@ -78,13 +66,17 @@ namespace CardClash
                 {
                     StopExistingFade(entry.CanvasGroup);
                     ApplyImmediate(entry.CanvasGroup, visible);
+
+                    if (visible)
+                        OnScreenOpened?.Invoke(entry.ScreenType);
+
                     continue;
                 }
 
                 StopExistingFade(entry.CanvasGroup);
 
                 if (visible)
-                    _activeFades[entry.CanvasGroup] = StartCoroutine(FadeInDelayed(entry.CanvasGroup));
+                    _activeFades[entry.CanvasGroup] = StartCoroutine(FadeInDelayed(entry.CanvasGroup, entry.ScreenType));
                 else
                     _activeFades[entry.CanvasGroup] = StartCoroutine(FadeCanvasGroup(entry.CanvasGroup, false));
             }
@@ -105,9 +97,11 @@ namespace CardClash
             group.blocksRaycasts = visible;
         }
 
-        private IEnumerator FadeInDelayed(CanvasGroup group)
+        private IEnumerator FadeInDelayed(CanvasGroup group, ScreenType screenType)
         {
             yield return FadeCanvasGroup(group, true);
+
+            OnScreenOpened?.Invoke(screenType);
         }
 
         private IEnumerator FadeCanvasGroup(CanvasGroup group, bool visible)

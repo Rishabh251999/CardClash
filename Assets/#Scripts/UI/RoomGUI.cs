@@ -27,7 +27,7 @@ namespace CardClash
 
         private void OnDestroy()
         {
-            _joinRoomButton.onClick.RemoveListener(_requestJoinRoom);
+            _joinRoomButton.RemoveListenerSafe(_requestJoinRoom);
         }
 
         [ClientCallback]
@@ -48,10 +48,10 @@ namespace CardClash
             _roomCodeText.text = $"Room: {_roomCode.ToString()[..6].ToUpper()}";
             _playerCountText.text = $"{roomInfo.playerCount} / {roomInfo.maxPlayers} Players";
 
-            _joinRoomButton.onClick.RemoveListener(OnJoinButtonClicked);
+            _joinRoomButton.RemoveListenerSafe(OnJoinButtonClicked);
 
             _requestJoinRoom = requestJoinRoom;
-            _joinRoomButton.onClick.AddListener(OnJoinButtonClicked);
+            _joinRoomButton.AddListenerSafe(OnJoinButtonClicked);
 
             UpdateRoomIndicator(roomInfo);
         }

@@ -3,6 +3,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Xml.Linq;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -12,7 +13,6 @@ namespace CardClash
     [RequireComponent(typeof(NetworkMatch))]
     public class CardGameController : NetworkBehaviour, ICardEffectContext
     {
-
         #region Constants / Colors
         private readonly Color32 _redColor = new(255, 90, 110, 255);    // #FF5A6E
         private readonly Color32 _blueColor = new(74, 138, 223, 255);   // #4A8ADF
@@ -21,6 +21,7 @@ namespace CardClash
 
         private readonly WaitForSeconds _waitForSeconds0_12 = new(0.12f);
         private readonly WaitForSeconds _waitForSeconds0_75 = new(0.75f);
+        private readonly WaitForSeconds _waitForSeconds0_5 = new(0.125f);
 
         #endregion
 
@@ -155,6 +156,7 @@ namespace CardClash
         private Coroutine _turnTimerCoroutine;
         private Coroutine _notificationHideCoroutine;
 
+        private bool _matchEnded;
         private bool _isGameRunningLocally;
         private bool _isTimerRunningLocally;
         private bool _awaitingDrawnCardDecision;
@@ -204,6 +206,8 @@ namespace CardClash
             _handContainer = _hand.transform;
 
             _topDiscardImage.color = new(1, 1, 1, 0);
+
+            AudioManager.Instance.StopMusic();
         }
 
         private void OnDestroy()
@@ -285,6 +289,7 @@ namespace CardClash
 
             if (visible)
             {
+                rect.SetAsLastSibling();
                 _panelAnimations[panel] = StartCoroutine(PopInPanel(rect));
             }
             else
@@ -296,8 +301,8 @@ namespace CardClash
         private IEnumerator PopInPanel(RectTransform rect)
         {
             const float overshootScale = 1.05f;
-            const float scaleUpDuration = 0.12f;
-            const float scaleDownDuration = 0.18f;
+            const float scaleUpDuration = 0.2f;
+            const float scaleDownDuration = 0.2f;
 
             rect.localScale = Vector3.zero;
 
@@ -334,7 +339,7 @@ namespace CardClash
 
         private IEnumerator PopOutPanel(RectTransform rect)
         {
-            const float scaleDownDuration = 0.12f;
+            const float scaleDownDuration = 0.2f;
 
             var startScale = rect.localScale;
             var elapsed = 0f;
@@ -669,7 +674,7 @@ namespace CardClash
         private IEnumerator StartGameSequence(GameCard firstDiscard)
         {
             // Allow SyncDictionary to flush first.
-            yield return null;
+            yield return _waitForSeconds0_5;
 
             RpcPlayStartCountdown();
 
@@ -810,7 +815,7 @@ namespace CardClash
             while (NetworkTime.time < endTime)
                 yield return null;
 
-            if (_currentPlayerNetId != netIdForThisTurn)
+            if (_matchEnded || _currentPlayerNetId != netIdForThisTurn)
                 yield break;
 
             if (HasPendingDraw)
@@ -826,13 +831,16 @@ namespace CardClash
                 yield break;
             }
 
-            ForcePlayerDraw(netIdForThisTurn, 1);
+            ForcePlayerDraw(netIdForThisTurn, 1, true);
             AdvanceTurn();
         }
 
         [Server]
         public void AdvanceTurn()
         {
+            if (_matchEnded)
+                return;
+
             _turnState.AdvanceTurn();
 
             SetNextTurn(_turnState.CurrentPlayerNetId);
@@ -894,6 +902,9 @@ namespace CardClash
         [Server]
         public void HandlePlayerCard(NetworkConnectionToClient conn, GameCard card, CardColor chosenWildColor)
         {
+            if (_matchEnded)
+                return;
+
             if (!IsValidPlayerAction(conn))
                 return;
 
@@ -939,6 +950,8 @@ namespace CardClash
                     CardColor.Yellow => NotificationType.Yellow,
                     _ => NotificationType.LastCard
                 }, "Color changes to: " + chosenWildColor.ToString());
+
+                AudioManager.Instance.PlaySoundEffect("color_changed");
             }
 
             if (_turnTimerCoroutine is { })
@@ -1015,13 +1028,18 @@ namespace CardClash
 
             if (card.Type is CardType.Reverse && _reverseFlipbook != null)
             {
-                StartCoroutine(InvokeAfterDelay(_reverseFlipbook.Duration, 
-                    () => _cardEffects.Resolve(card.Type).Apply(this)));
-            }
+                StartCoroutine(InvokeAfterDelay(_reverseFlipbook.Duration, () =>
+                {
+                    if (_matchEnded)
+                        return;
 
+                    _cardEffects.Resolve(card.Type).Apply(this);
+                }));
+            }
             else
             {
-                _cardEffects.Resolve(card.Type).Apply(this);
+                if (!_matchEnded)
+                    _cardEffects.Resolve(card.Type).Apply(this);
             }
         }
 
@@ -1141,7 +1159,7 @@ namespace CardClash
         #region Server - Card Drawing
 
         [Server]
-        private void ForcePlayerDraw(uint targetNetId, int count)
+        private void ForcePlayerDraw(uint targetNetId, int count, bool isPenalty = false)
         {
             if (!_playerRegistry.Players.TryGetValue(targetNetId, out var entry))
             {
@@ -1176,7 +1194,18 @@ namespace CardClash
                 CanPlayDrawnCard = false
             });
 
+            if (isPenalty)
+            {
+                TargetPlayPenaltyDrawSound(entry.Conn);
+            }
+
             RpcShowTopDiscard(_syncedTopDiscard, _deck.DrawPileCount, _turnState.TurnDirection);
+        }
+
+        [TargetRpc]
+        private void TargetPlayPenaltyDrawSound(NetworkConnectionToClient target)
+        {
+            AudioManager.Instance.PlaySoundEffect("draw_penalty");
         }
 
         [Server]
@@ -1357,6 +1386,8 @@ namespace CardClash
         [Server]
         private IEnumerator HandlePlayerWin()
         {
+            _matchEnded = true;
+
             yield return _waitForSeconds0_75;
 
             if (_turnTimerCoroutine is { })
@@ -1371,9 +1402,11 @@ namespace CardClash
                 _gameTimerCoroutine = null;
             }
 
-            var finalScores = CalculateFinalScores();   // <-- called here
+            var finalScores = CalculateFinalScores(out var winnerNetId); 
 
             RpcShowGameEndScreen(finalScores.ToArray());
+
+            PlayEndGameSounds(winnerNetId);
 
             NotifyOwnerCanRestart();
         }
@@ -1381,6 +1414,8 @@ namespace CardClash
         [Server]
         private void EndMatchByTimeout()
         {
+            _matchEnded = true;
+
             if (_turnTimerCoroutine is { })
             {
                 StopCoroutine(_turnTimerCoroutine);
@@ -1389,11 +1424,32 @@ namespace CardClash
 
             _gameTimerCoroutine = null;
 
-            var finalScores = CalculateFinalScores();
+            var finalScores = CalculateFinalScores(out var winnerNetId);
 
             RpcShowGameEndScreen(finalScores.ToArray());
 
+            PlayEndGameSounds(winnerNetId);
+
             NotifyOwnerCanRestart();
+        }
+
+        [Server]
+        private void PlayEndGameSounds(uint winnerNetId)
+        {
+            foreach (var entry in _playerRegistry.Players)
+            {
+                var conn = entry.Value.Conn;
+
+                if (conn == null)
+                    continue;
+
+                // This is where TargetPlayWinSound / TargetPlayLoseSound get invoked,
+                // one per connected player, routed individually via TargetRpc.
+                if (entry.Key == winnerNetId)
+                    TargetPlayWinSound(conn);
+                else
+                    TargetPlayLoseSound(conn);
+            }
         }
 
         [Server]
@@ -1410,9 +1466,12 @@ namespace CardClash
         private void TargetShowPlayAgainButton(NetworkConnectionToClient target) => _gameEndManager.ShowPlayAgainButton();
 
         [Server]
-        private List<GameEndPlayerInfo> CalculateFinalScores()
+        private List<GameEndPlayerInfo> CalculateFinalScores(out uint winnerNetId)
         {
             List<GameEndPlayerInfo> finalScores = new();
+
+            winnerNetId = default;
+            var lowestScore = int.MaxValue;
 
             foreach (var i in _playerRegistry.AllHands)
             {
@@ -1443,6 +1502,12 @@ namespace CardClash
                     PlayerScore = winnerScore,
                     AvatarId = avatarId
                 });
+
+                if (winnerScore < lowestScore)
+                {
+                    lowestScore = winnerScore;
+                    winnerNetId = i.Key;
+                }
             }
 
             return finalScores;
@@ -1450,6 +1515,24 @@ namespace CardClash
 
         #endregion
 
+        #region Client Game End
+
+        [TargetRpc]
+        private void TargetPlayWinSound(NetworkConnectionToClient target) => PlayGameEndSfx("win");
+
+        [TargetRpc]
+        private void TargetPlayLoseSound(NetworkConnectionToClient target) => PlayGameEndSfx("lose");
+
+        [Client]
+        private void PlayGameEndSfx(string soundName)
+        {
+            if (string.IsNullOrEmpty(soundName) || AudioManager.Instance == null)
+                return;
+
+            AudioManager.Instance.PlaySoundEffect(soundName);
+        }
+
+        #endregion
 
         #region Server - Restart
 
@@ -1465,6 +1548,8 @@ namespace CardClash
                 return;
 
             RestartMatch();
+
+            _matchEnded = false;
         }
 
         [Server]
@@ -1522,6 +1607,12 @@ namespace CardClash
         [ClientRpc]
         private void RpcShowGameEndScreen(GameEndPlayerInfo[] standings)
         {
+            if (_onColorChosen != null)
+            {
+                _onColorChosen = null;
+                SetPanelVisible(_colorPickerPanel, false);
+            }
+
             _gameEndManager.ShowGameEndScreen(standings);
         }
 
@@ -1660,17 +1751,17 @@ namespace CardClash
         {
             SetPanelVisible(_countdownPanel, true);
 
-            string[] steps =
+            (string Text, string Sfx)[] steps =
             {
-                "3",
-                "2",
-                "1",
-                "GO!"
+                ("3", "countdown_beep"),
+                ("2", "countdown_beep"),
+                ("1", "countdown_beep"),
+                ("GO!", "countdown_go")
             };
 
             foreach (var step in steps)
             {
-                yield return StartCoroutine(PlayCountdownStep(step));
+                yield return StartCoroutine(PlayCountdownStep(step.Text, step.Sfx));
             }
 
             SetPanelVisible(_countdownPanel, false);
@@ -1679,7 +1770,7 @@ namespace CardClash
         }
 
         [Client]
-        private IEnumerator PlayCountdownStep(string text)
+        private IEnumerator PlayCountdownStep(string text, string sfxName)
         {
             if (_countdownText == null)
                 yield break;
@@ -1688,6 +1779,8 @@ namespace CardClash
             const float endScale = 1f;
 
             _countdownText.text = text;
+
+            AudioManager.Instance.PlaySoundEffect(sfxName);
 
             var rect = _countdownText.rectTransform;
 
@@ -1738,7 +1831,7 @@ namespace CardClash
                 _reverseFlipbook.SetDirection(turnDirection);
             }
 
-            if (card.Type is CardType.Reverse && _reverseFlipbook is not { })
+            if (card.Type is CardType.Reverse && _reverseFlipbook is { })
             {
                 _reverseFlipbook.SetDirection(turnDirection);
                 _reverseFlipbook.Play(ToUnityColor(card.Color));
@@ -1751,9 +1844,10 @@ namespace CardClash
             if (this == null || !gameObject.activeInHierarchy)
                 return;
 
-            if (card.Type is CardType.Reverse && _reverseFlipbook != null)
+            if (card.Type is CardType.Reverse && _reverseFlipbook is { })
             {
                 _reverseFlipbook.Play(ToUnityColor(card.Color));
+                AudioManager.Instance.PlaySoundEffect("reverse");
             }
         }
 
@@ -1767,11 +1861,10 @@ namespace CardClash
                 skippedPlayerGUI.PlaySkipEffect(tint);
 
             // Only play the big on-screen skip flipbook for the player who was actually skipped.
-            if (_skipFlipbook != null &&
-                NetworkClient.localPlayer is { netId: var selfNetId } &&
-                selfNetId == skippedNetId)
+            if (_skipFlipbook is { } && NetworkClient.localPlayer is { netId: var selfNetId } && selfNetId == skippedNetId)
             {
                 _skipFlipbook.Play(tint);
+                AudioManager.Instance.PlaySoundEffect("skip");
             }
         }
 
@@ -1918,7 +2011,13 @@ namespace CardClash
         {
             foreach (var card in _handCards)
             {
-                card.SetInteractable(isMyTurn && IsValidPlay(card.CardData));
+                var canPlay = isMyTurn && IsValidPlay(card.CardData);
+                card.SetInteractable(canPlay);
+                card.SetHighlight(!isMyTurn
+                    ? Card.HighlightState.Normal
+                    : canPlay
+                        ? Card.HighlightState.Playable
+                        : Card.HighlightState.Disabled);
             }
         }
 

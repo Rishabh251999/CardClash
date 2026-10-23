@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace CardClash
@@ -5,49 +7,70 @@ namespace CardClash
     [RequireComponent(typeof(AudioSource))]
     public class AudioManager : MonoBehaviour
     {
-        #region Constants
+        private const string MusicKey = "Music";
+        private const string SoundKey = "SoundEffect";
 
-        private const string SoundKey = "Sound";
+        private const string MusicResourcesFolder = "Music";
+        private const string SfxResourcesFolder = "Sound Effects";
 
-        #endregion
+        public static AudioManager Instance { get; private set; }
 
-        #region Runtime References
-
-        private AudioSource _musicAudioSource;
+        [Header("Sources")]
         [SerializeField] private AudioSource _sfxSource;
 
-        #endregion
-
-        #region Music Settings
-
-        [Header("Music")]
-        [SerializeField] private AudioClip _defaultMusic;
-        [SerializeField] private AudioClip[] _musicTracks;
-        [SerializeField] private AudioClip[] _soundEffects;
-
-        #endregion
+        private AudioSource _musicSource;
+        private Dictionary<string, AudioClip> _sfxLookup;
+        private Dictionary<string, AudioClip> _musicLookup;
+        private bool _musicEnabled;
+        private bool _sfxEnabled;
 
         private void Awake()
         {
+            if (Instance != null && Instance != this)
+            {
+                Destroy(gameObject);
+                return;
+            }
+
+            Instance = this;
+            DontDestroyOnLoad(gameObject);
+
             if (Application.isBatchMode)
                 return;
 
-            _musicAudioSource = GetComponent<AudioSource>();
+            _sfxLookup = BuildLookup(Resources.LoadAll<AudioClip>(SfxResourcesFolder));
+            _musicLookup = BuildLookup(Resources.LoadAll<AudioClip>(MusicResourcesFolder));
 
-            if (_defaultMusic != null)
-                _musicAudioSource.clip = _defaultMusic;
+            Debug.Log($"AudioManager: Loaded {_sfxLookup.Count} sound effects and {_musicLookup.Count} music tracks.");
 
-            var soundEnabled = PlayerPrefs.GetInt(SoundKey, 1) == 1;
+            _musicSource = GetComponent<AudioSource>();
+            _musicSource.playOnAwake = false;
+            _musicSource.loop = true;
 
-            SetMusicEnabled(soundEnabled);
+            SetMusicEnabled(PlayerPrefs.GetInt(MusicKey, 1) == 1);
+            SetSfxEnabled(PlayerPrefs.GetInt(SoundKey, 1) == 1);
+            PlayTrack("menu_loop");
+        }
+
+        private Dictionary<string, AudioClip> BuildLookup(AudioClip[] clips)
+        {
+            var count = clips != null ? clips.Length : 0;
+            var lookup = new Dictionary<string, AudioClip>(count, StringComparer.Ordinal);
+
+            for (var i = 0; i < count; i++)
+            {
+                var clip = clips[i];
+
+                if (clip != null)
+                    lookup.TryAdd(clip.name, clip); // first one wins on duplicates
+            }
+
+            return lookup;
         }
 
         public void SetMusicEnabled(bool isEnabled)
         {
-            if (_musicAudioSource == null)
-                return;
-
-            _musicAudioSource.mute = !isEnabled;
+            _musicEnabled = isEnabled;
 
             if (isEnabled)
                 PlayMusic();
@@ -55,44 +78,57 @@ namespace CardClash
                 StopMusic();
         }
 
-        public void PlayMusic()
+        public void SetSfxEnabled(bool isEnabled)
         {
-            if (_musicAudioSource == null || _musicAudioSource.isPlaying)
+            _sfxEnabled = isEnabled;
+        }
+
+        private void PlayMusic()
+        {
+            if (!_musicEnabled || _musicSource == null || _musicSource.clip == null || _musicSource.isPlaying)
                 return;
 
-            _musicAudioSource.Play();
+            _musicSource.Play();
         }
 
         public void StopMusic()
         {
-            if (_musicAudioSource == null)
+            if (_musicSource != null && _musicSource.isPlaying)
+                _musicSource.Stop();
+        }
+
+        public void PlayTrack(string trackName)
+        {
+            if (_musicLookup == null || string.IsNullOrEmpty(trackName))
                 return;
 
-            _musicAudioSource.Stop();
+            if (_musicLookup.TryGetValue(trackName, out var clip))
+                PlayClip(clip);
+        }
+
+        private void PlayClip(AudioClip clip)
+        {
+            if (_musicSource == null || clip == null)
+                return;
+
+            // Same track already running: don't restart it.
+            if (_musicSource.clip == clip && _musicSource.isPlaying)
+                return;
+
+            _musicSource.clip = clip;
+
+            // Clip is assigned even when sound is off, so it plays once re-enabled.
+            if (_musicEnabled)
+                _musicSource.Play();
         }
 
         public void PlaySoundEffect(string soundName)
         {
-            if (_sfxSource == null || string.IsNullOrEmpty(soundName))
+            if (!_sfxEnabled || _sfxSource == null || _sfxLookup == null || string.IsNullOrEmpty(soundName))
                 return;
-            var clip = GetSoundEffectClip(soundName);
 
-            if (clip != null)
+            if (_sfxLookup.TryGetValue(soundName, out var clip))
                 _sfxSource.PlayOneShot(clip);
-        }
-
-        private AudioClip GetSoundEffectClip(string soundName)
-        {
-            if (_soundEffects == null || _soundEffects.Length == 0)
-                return null;
-
-            foreach (var clip in _soundEffects)
-            {
-                if (clip != null && clip.name == soundName)
-                    return clip;
-            }
-
-            return null;
         }
     }
 }

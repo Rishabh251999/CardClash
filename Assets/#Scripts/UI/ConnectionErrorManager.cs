@@ -13,6 +13,12 @@ namespace CardClash
 
         #endregion
 
+        #region Script References
+
+        [SerializeField] private UIManager _uiManager;
+
+        #endregion
+
         #region UI References
 
         [Header("UI References")]
@@ -44,7 +50,7 @@ namespace CardClash
 
         private void Start()
         {
-            _retryButton.onClick.AddListener(RetryConnection);
+            _retryButton.AddListenerSafe(RetryConnection);
 
             if (_spinner is { })
                 _spinnerRectTransform = _spinner.GetComponent<RectTransform>();
@@ -52,7 +58,7 @@ namespace CardClash
 
         private void OnDestroy()
         {
-            _retryButton.onClick.RemoveListener(RetryConnection);
+            _retryButton.RemoveListenerSafe(RetryConnection);
         }
 
 
@@ -64,9 +70,7 @@ namespace CardClash
         private void StartSpinner()
         {
             if (_spinner is not { })
-            {
                 return;
-            }
 
             _spinnerCoroutine ??= StartCoroutine(IE_RotateSpinner());
         }
@@ -94,12 +98,30 @@ namespace CardClash
             {
                 if (NetworkClient.isConnected || NetworkClient.active)
                 {
-                    Debug.Log("RetryConnection: Stale client state detected, stopping client before retry...");
                     NetworkManager.singleton.StopClient();
                 }
 
-                Debug.Log("RetryConnection: Attempting to reconnect to the server...");
                 NetworkManager.singleton.StartClient();
+
+                float elapsed = 0f;
+
+                while (elapsed < 5.0f && !NetworkClient.isConnected)
+                {
+                    elapsed += Time.deltaTime;
+                    yield return null;
+                }
+
+                if (NetworkClient.isConnected)
+                {
+                    StopSpinner();
+
+                    _retryButton.interactable = true;
+
+                    // Client reconnected successfully - skip the loading screen entirely and go straight to the lobby.
+                    _uiManager.SetState(ScreenType.Lobby, false);
+
+                    yield break;
+                }
             }
 
             yield return _waitForSeconds5_0;

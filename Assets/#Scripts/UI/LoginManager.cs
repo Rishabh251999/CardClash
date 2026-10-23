@@ -40,16 +40,16 @@ namespace CardClash
 
         private void Awake()
         {
-            _enterButton.onClick.AddListener(OnEnterButtonClicked);
-            _userNameInputField.onValueChanged.AddListener(OnUserNameChanged);
+            _enterButton.AddListenerSafe(OnEnterButtonClicked);
+            _userNameInputField.AddListenerSafe(OnUserNameChanged);
 
             _userNameInputField.characterLimit = MaxUserNameLength;
         }
 
         private void OnDestroy()
         {
-            _enterButton.onClick.RemoveListener(OnEnterButtonClicked);
-            _userNameInputField.onValueChanged.RemoveListener(OnUserNameChanged);
+            _enterButton.AddListenerSafe(OnEnterButtonClicked);
+            _userNameInputField.AddListenerSafe(OnUserNameChanged);
         }
 
         private void OnUserNameChanged(string userName)
@@ -67,17 +67,16 @@ namespace CardClash
 
             PlayerPrefs.SetString(UserNameKey, _pendingUserName);
 
-            TryConnect();
+            _uiManager.SetState(ScreenType.Loading, false);
         }
 
-        private void TryConnect()
-        {
-            if (NetworkServer.active || NetworkClient.isConnected || NetworkClient.active)
-                return;
+        //private void TryConnect()
+        //{
+        //    if (NetworkServer.active || NetworkClient.isConnected || NetworkClient.active)
+        //        return;
 
-            NetworkManager.singleton.enabled = true;
-            NetworkManager.singleton.StartClient();
-        }
+        //    NetworkManager.singleton.StartClient();
+        //}
 
         #endregion
     }

@@ -31,6 +31,15 @@ namespace CardClash
         [Tooltip("A drop above this fraction of the screen height also counts as a play (0 = only the target area counts).")]
         [SerializeField, Range(0f, 1f)] private float _dropHeightFraction = 0.4f;
 
+        [Header("Playable highlight")]
+        [Tooltip("Child Image with the card_highlight sprite (Raycast Target OFF, in front of the card). Optional.")]
+        [SerializeField] private Image _highlight;
+        [SerializeField] private Color _highlightColor = new Color32(0xFF, 0xF3, 0xB0, 255);
+        [Tooltip("Tint of a card that can NOT be played on your turn.")]
+        [SerializeField] private Color _dimColor = new Color32(0x8C, 0x8C, 0x99, 255);
+        [SerializeField] private float _playableScale = 1.08f;
+        [SerializeField] private float _pulseSpeed = 3f;
+
         #endregion
 
         #region UI References
@@ -67,6 +76,12 @@ namespace CardClash
         private bool _pendingPlay;               // dropped on the table, waiting for the server
         private bool _played;                    // the server accepted the play
 
+        // highlight state
+        public enum HighlightState { Normal, Playable, Disabled }
+        private HighlightState _highlightState = HighlightState.Normal;
+        private float _glowAlpha;
+        private bool _highlightSized;
+
         #endregion
 
         #region Unity Methods
@@ -78,6 +93,9 @@ namespace CardClash
             _rectTransform = (RectTransform)transform;
             _layoutElement = GetComponent<LayoutElement>();
             _rootCanvas = GetComponentInParent<Canvas>();
+
+            // the dimming below changes the card's color itself, so the button's own color tint must not fight it
+            _button.transition = Selectable.Transition.None;
         }
 
         private void OnDestroy()
@@ -113,6 +131,63 @@ namespace CardClash
             if (!_pendingPlay || _played) return;
             StopAllCoroutines();
             StartCoroutine(SettleBackToHand());
+        }
+
+        #endregion
+
+        #region Playable highlight
+
+        /// <summary>
+        /// Normal   = no highlight (for example when it is not your turn)
+        /// Playable = glowing ring, slightly bigger, gentle pulse
+        /// Disabled = dimmed (it is your turn, but this card can not be played)
+        /// </summary>
+        public void SetHighlight(HighlightState state) => _highlightState = state;
+
+        private void UpdateHighlight()
+        {
+            if (_played || _cardImage == null) return;     // the play animation controls the scale from here on
+
+            float k = 1f - Mathf.Exp(-14f * Time.unscaledDeltaTime);
+            bool playable = _highlightState == HighlightState.Playable;
+
+            // a little bigger when playable (scale works inside a layout group, moving the position does not)
+            float scale = Mathf.Lerp(_rectTransform.localScale.x, playable ? _playableScale : 1f, k);
+            _rectTransform.localScale = new Vector3(scale, scale, 1f);
+
+            // dim the cards that can not be played
+            var tint = _highlightState == HighlightState.Disabled ? _dimColor : Color.white;
+            _cardImage.color = Color.Lerp(_cardImage.color, tint, k);
+
+            // glowing ring
+            if (_highlight != null)
+            {
+                if (playable && !_highlightSized) SizeHighlight();
+
+                float target = playable ? 0.8f + 0.2f * Mathf.Sin(Time.unscaledTime * _pulseSpeed) : 0f;
+                _glowAlpha = Mathf.Lerp(_glowAlpha, target, k);
+                _highlight.enabled = _glowAlpha > 0.01f;
+
+                var c = _highlightColor;
+                c.a = _glowAlpha;
+                _highlight.color = c;
+            }
+        }
+
+        // the ring sprite is the card plus an 8.3% margin on every side
+        private void SizeHighlight()
+        {
+            float width = _rectTransform.rect.width;
+            if (width <= 1f) return;
+
+            var rt = _highlight.rectTransform;
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            float m = width * 0.0833f;
+            rt.offsetMin = new Vector2(-m, -m);
+            rt.offsetMax = new Vector2(m, m);
+            _highlight.raycastTarget = false;
+            _highlightSized = true;
         }
 
         #endregion
@@ -180,6 +255,8 @@ namespace CardClash
         // follow and tilt run every frame, so the tilt relaxes when the finger stops moving
         private void Update()
         {
+            UpdateHighlight();
+
             if (!_isDragging) return;
 
             // the hand was rebuilt by the server while dragging: the slot is gone, so drop the card
@@ -211,7 +288,7 @@ namespace CardClash
             if (IsOverDropZone(eventData))
             {
                 _pendingPlay = true;
-                TryPlay(); 
+                TryPlay();
                 return;
             }
 
@@ -393,6 +470,9 @@ namespace CardClash
 
             _button.interactable = false;
 
+            if (_highlight != null) _highlight.enabled = false;    // no ring on the card that is being played
+            _cardImage.color = Color.white;
+
             if (target == null)
                 return;
 
@@ -453,6 +533,40 @@ namespace CardClash
 
             _rectTransform.localScale = normal;
             _rectTransform.localRotation = Quaternion.Euler(0f, 0f, randomTilt);
+        }
+
+        public IEnumerator SettleInDropZone(Transform target)
+        {
+            if (_played || target == null)
+                yield break;
+
+            var start = _rectTransform.position;
+            var startRot = _rectTransform.localRotation;
+
+            float duration = CardGameController.Instance != null
+                ? CardGameController.Instance.PlayMoveDuration
+                : SettleDuration;
+
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                if (_played) yield break;
+
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = EaseOutBack(t);
+
+                _rectTransform.position = Vector3.LerpUnclamped(start, target.position, eased);
+                _rectTransform.localRotation = Quaternion.Slerp(startRot, Quaternion.identity, t);
+
+                yield return null;
+            }
+
+            if (_played) yield break;
+
+            _rectTransform.position = target.position;
+            _rectTransform.localRotation = Quaternion.identity;
         }
 
         #endregion

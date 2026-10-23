@@ -21,7 +21,7 @@ namespace CardClash
         [Header("UI References")]
 
         [SerializeField] private Button _createButton;
-        [SerializeField] private Button _profileButton;
+        [SerializeField] private Button _settingsButton;
 
         [Space(2.5f)]
         [SerializeField] private CanvasGroup _noRoomsCanvasGroup;
@@ -43,18 +43,19 @@ namespace CardClash
         #endregion
 
         #region Unity Lifecycle 
+
         internal void Initialize(ClientRoomRepository clientRoomRepository) => _clientRoomRepository = clientRoomRepository;
 
         private void Start()
         {
-            _createButton.onClick.AddListener(RequestCreateRoom);
-            _profileButton.onClick.AddListener(OnProfileButtonClick);
+            _createButton.AddListenerSafe(RequestCreateRoom);
+            _settingsButton.AddListenerSafe(OnSettingsButtonClick);
         }
 
         private void OnDestroy()
         {
-            _createButton.onClick.RemoveListener(RequestCreateRoom);
-            _profileButton.onClick.RemoveListener(OnProfileButtonClick);
+            _createButton.RemoveListenerSafe(RequestCreateRoom);
+            _settingsButton.RemoveListenerSafe(OnSettingsButtonClick);
         }
 
         #endregion
@@ -86,7 +87,7 @@ namespace CardClash
             _uiManager.SetState(ScreenType.RoomInfo, true);
         }
 
-        private void OnProfileButtonClick()
+        private void OnSettingsButtonClick()
         {
             _uiManager.SetState(ScreenType.Settings, true);
         }

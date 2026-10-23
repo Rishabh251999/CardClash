@@ -15,11 +15,15 @@ namespace CardClash
         private const int MaxUserNameLength = 16;
 
         private const string UserNameKey = "UserName";
+        private const string MusicKey = "Music";
         private const string SoundKey = "Sound";
         private const string VibrationKey = "Vibration";
 
         private const string OnLabel = "ON";
         private const string OffLabel = "OFF";
+
+        private const string ToggleOnSfx = "toggle_on";
+        private const string ToggleOffSfx = "toggle_off";
 
         private readonly Color32 OnColor = new(0xC3, 0xA8, 0xFF, 255);
 
@@ -31,8 +35,8 @@ namespace CardClash
 
         [Header("References")]
         [SerializeField] private UIManager _uiManager;
-        [SerializeField] private AudioManager _audioManager;
 
+        [SerializeField] private SettingsData _musicToggle;
         [SerializeField] private SettingsData _soundToggle;
         [SerializeField] private SettingsData _vibrationToggle;
 
@@ -76,16 +80,20 @@ namespace CardClash
 
         private string _originalUsername;
 
+        private bool _originalMusicEnabled;
         private bool _originalSoundEnabled;
         private bool _originalVibrationEnabled;
 
+        private Coroutine _musicAnimation;
         private Coroutine _soundAnimation;
         private Coroutine _vibrationAnimation;
 
+        private Vector3 _musicOriginalScale;
         private Vector3 _soundOriginalScale;
         private Vector3 _vibrationOriginalScale;
 
-        private bool HasUnsavedChanges => _usernameInputField.text != _originalUsername || _soundToggle.toggle.isOn != _originalSoundEnabled ||
+        private bool HasUnsavedChanges => _usernameInputField.text != _originalUsername || _musicToggle.toggle.isOn != 
+            _originalMusicEnabled || _soundToggle.toggle.isOn != _originalSoundEnabled || 
             _vibrationToggle.toggle.isOn != _originalVibrationEnabled;
 
         #endregion
@@ -94,50 +102,42 @@ namespace CardClash
 
         private void Awake()
         {
-            _soundOriginalScale = _soundToggle.toggle.image.rectTransform.localScale;
-
+            _musicOriginalScale = _musicToggle.toggle.image.rectTransform.localScale;
+            _soundOriginalScale = _musicToggle.toggle.image.rectTransform.localScale;
             _vibrationOriginalScale = _vibrationToggle.toggle.image.rectTransform.localScale;
         }
 
         private void Start()
         {
-            _backButton.onClick.AddListener(OnBackButtonClick);
-            _saveButton.onClick.AddListener(OnSaveButtonClick);
-            _editButton.onClick.AddListener(OnEditButtonClick);
+            _backButton.AddListenerSafe(OnBackButtonClick);
+            _saveButton.AddListenerSafe(OnSaveButtonClick);
+            _editButton.AddListenerSafe(OnEditButtonClick);
 
-            _usernameInputField.onValueChanged.AddListener(OnUsernameValueChanged);
+            _usernameInputField.AddListenerSafe(OnUsernameValueChanged);
 
-            _soundToggle.toggle.onValueChanged.AddListener(OnSoundToggleChanged);
-            _vibrationToggle.toggle.onValueChanged.AddListener(OnVibrationToggleChanged);
+            _musicToggle.toggle.AddListenerSafe(OnMusicToggleChanged);
+            _soundToggle.toggle.AddListenerSafe(OnSoundToggleChanged);
+            _vibrationToggle.toggle.AddListenerSafe(OnVibrationToggleChanged);
 
             _uiManager.OnStateChanged += OnStateChanged;
         }
 
         private void OnDestroy()
         {
-            if (_backButton != null)
-                _backButton.onClick.RemoveListener(OnBackButtonClick);
+            _backButton.RemoveListenerSafe(OnBackButtonClick);
+            _saveButton.RemoveListenerSafe(OnSaveButtonClick);
+            _editButton.RemoveListenerSafe(OnEditButtonClick);
 
-            if (_saveButton != null)
-                _saveButton.onClick.RemoveListener(OnSaveButtonClick);
+            _usernameInputField.RemoveListenerSafe(OnUsernameValueChanged);
 
-            if (_editButton != null)
-                _editButton.onClick.RemoveListener(OnEditButtonClick);
-
-            if (_usernameInputField != null)
-                _usernameInputField.onValueChanged.RemoveListener(OnUsernameValueChanged);
-
-            if (_soundToggle?.toggle != null)
-                _soundToggle.toggle.onValueChanged.RemoveListener(OnSoundToggleChanged);
-
-            if (_vibrationToggle?.toggle != null)
-                _vibrationToggle.toggle.onValueChanged.RemoveListener(OnVibrationToggleChanged);
+            _soundToggle.toggle.RemoveListenerSafe(OnMusicToggleChanged);
+            _vibrationToggle.toggle.RemoveListenerSafe(OnVibrationToggleChanged);
 
             if (_uiManager != null)
                 _uiManager.OnStateChanged -= OnStateChanged;
 
+            StopToggleAnimation(_musicToggle, ref _musicAnimation, _musicOriginalScale);
             StopToggleAnimation(_soundToggle, ref _soundAnimation, _soundOriginalScale);
-
             StopToggleAnimation(_vibrationToggle, ref _vibrationAnimation, _vibrationOriginalScale);
         }
 
@@ -153,15 +153,19 @@ namespace CardClash
         {
             var username =  PlayerPrefs.GetString(UserNameKey, string.Empty);
 
+
+            var musicEnabled = PlayerPrefs.GetInt(MusicKey, 1) == 1;
             var soundEnabled = PlayerPrefs.GetInt(SoundKey, 1) == 1;
             var vibrationEnabled = PlayerPrefs.GetInt(VibrationKey, 1) == 1;
 
             _usernameInputField.SetTextWithoutNotify(username);
             _usernameInputField.interactable = false;
 
+            _musicToggle.toggle.SetIsOnWithoutNotify(musicEnabled);
             _soundToggle.toggle.SetIsOnWithoutNotify(soundEnabled);
             _vibrationToggle.toggle.SetIsOnWithoutNotify(vibrationEnabled);
 
+            SetToggleVisualInstant(_musicToggle);
             SetToggleVisualInstant(_soundToggle);
             SetToggleVisualInstant(_vibrationToggle);
 
@@ -173,6 +177,7 @@ namespace CardClash
         private void CacheOriginalValues()
         {
             _originalUsername = _usernameInputField.text;
+            _originalMusicEnabled = _musicToggle.toggle.isOn;
             _originalSoundEnabled = _soundToggle.toggle.isOn;
             _originalVibrationEnabled = _vibrationToggle.toggle.isOn;
         }
@@ -196,13 +201,24 @@ namespace CardClash
             data.statusText.color = isOn ? OnColor : OffColor;
         }
 
+        private void OnMusicToggleChanged(bool isOn)
+        {
+            AudioManager.Instance.PlaySoundEffect(isOn ? ToggleOnSfx : ToggleOffSfx);
+
+            HandleToggleChanged(_musicToggle, ref _musicAnimation, _musicOriginalScale);
+        }
+
         private void OnSoundToggleChanged(bool isOn)
         {
+            AudioManager.Instance.PlaySoundEffect(isOn ? ToggleOnSfx : ToggleOffSfx);
+
             HandleToggleChanged(_soundToggle, ref _soundAnimation, _soundOriginalScale);
         }
 
         private void OnVibrationToggleChanged(bool isOn)
         {
+            AudioManager.Instance.PlaySoundEffect(isOn ? ToggleOnSfx : ToggleOffSfx);
+
             HandleToggleChanged(_vibrationToggle, ref _vibrationAnimation, _vibrationOriginalScale);
         }
 
@@ -274,10 +290,20 @@ namespace CardClash
 
             rect.localScale = originalScale;
 
-            if (data == _soundToggle)
-                _soundAnimation = null;
-            else
-                _vibrationAnimation = null;
+            switch (data)
+            {
+                case var d when d == _soundToggle:
+                    _soundAnimation = null;
+                    break;
+
+                case var d when d == _musicToggle:
+                    _musicAnimation = null;
+                    break;
+
+                default:
+                    _vibrationAnimation = null;
+                    break;
+            }
         }
 
         private void OnUsernameValueChanged(string username)
@@ -304,7 +330,8 @@ namespace CardClash
             if (!HasUnsavedChanges)
                 return;
 
-            _audioManager.SetMusicEnabled(_soundToggle.toggle.isOn);
+            AudioManager.Instance.SetMusicEnabled(_musicToggle.toggle.isOn);
+            AudioManager.Instance.SetSfxEnabled(_soundToggle.toggle.isOn);
 
             var username = _usernameInputField.text.Trim();
 
@@ -316,6 +343,7 @@ namespace CardClash
 
             PlayerPrefs.SetString(UserNameKey, username);
 
+            PlayerPrefs.SetInt(MusicKey,_musicToggle.toggle.isOn ? 1 : 0);
             PlayerPrefs.SetInt(SoundKey,_soundToggle.toggle.isOn ? 1 : 0);
             PlayerPrefs.SetInt(VibrationKey, _vibrationToggle.toggle.isOn ? 1 : 0);
 

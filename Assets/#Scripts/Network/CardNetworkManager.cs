@@ -219,6 +219,8 @@ namespace CardClash
 
         private void HandleLoadingBarComplete()
         {
+            Debug.Log("CardNetworkManager: Loading bar complete, switching to lobby screen.");
+
             _loadingManager.OnLoadingComplete -= HandleLoadingBarComplete;
             _uiManager.SetState(ScreenType.Lobby, false);
         }
