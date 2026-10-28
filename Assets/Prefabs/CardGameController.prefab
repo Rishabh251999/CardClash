@@ -277,7 +277,7 @@ MonoBehaviour:
   - {fileID: 21300000, guid: 16bad38e86670114090e80bc91a5b4af, type: 3}
   - {fileID: 21300000, guid: 23d4119559f95034b87d2fc53f2bfa7c, type: 3}
   _canvasGroup: {fileID: 9149200047315383203}
-  _fps: 24
+  _fps: 60
   _keepLastFrame: 0
   _playOnEnable: 0
 --- !u!1 &360426056287237908
@@ -488,7 +488,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 0.77254903}
   m_RaycastTarget: 0
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -1568,7 +1568,7 @@ MonoBehaviour:
   - {fileID: 21300000, guid: ee090147d62fc4a4eaf20fb5b8ce1019, type: 3}
   - {fileID: 21300000, guid: ba316a69c2ef5de4eabf2ed1cf9b4a3d, type: 3}
   _canvasGroup: {fileID: 8473510947467281782}
-  _fps: 24
+  _fps: 60
   _keepLastFrame: 0
   _playOnEnable: 0
 --- !u!1 &2168493672440537915
@@ -1885,18 +1885,18 @@ RectTransform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2304656993259852531}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 5589438875591282920}
-  m_Father: {fileID: 3007321839721461851}
+  m_Father: {fileID: 2724451203176104533}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 0}
-  m_AnchorMax: {x: 1, y: 1}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 40, y: 40}
+  m_SizeDelta: {x: 171, y: 171}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &8832873915824239020
 CanvasRenderer:
@@ -2508,12 +2508,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.HorizontalLayoutGroup
   m_Padding:
-    m_Left: 45
-    m_Right: 0
-    m_Top: 0
-    m_Bottom: 0
-  m_ChildAlignment: 3
-  m_Spacing: 20
+    m_Left: 12
+    m_Right: 12
+    m_Top: 8
+    m_Bottom: 8
+  m_ChildAlignment: 4
+  m_Spacing: 22
   m_ChildForceExpandWidth: 0
   m_ChildForceExpandHeight: 0
   m_ChildControlWidth: 0
@@ -2797,8 +2797,7 @@ RectTransform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 4845317154253593449}
+  m_Children: []
   m_Father: {fileID: 2724451203176104533}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
@@ -2881,8 +2880,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
-  m_AnchoredPosition: {x: 57, y: 0}
-  m_SizeDelta: {x: 325, y: 91.5}
+  m_AnchoredPosition: {x: 57, y: -16.4}
+  m_SizeDelta: {x: 325, y: 102}
   m_Pivot: {x: 0, y: -1}
 --- !u!222 &3199832698248561459
 CanvasRenderer:
@@ -2913,7 +2912,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls: []
   m_Sprite: {fileID: 21300000, guid: 90a8c39c5b26ac447a9704e228cd8d74, type: 3}
-  m_Type: 0
+  m_Type: 1
   m_PreserveAspect: 1
   m_FillCenter: 1
   m_FillMethod: 4
@@ -2921,7 +2920,7 @@ MonoBehaviour:
   m_FillClockwise: 1
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
-  m_PixelsPerUnitMultiplier: 1
+  m_PixelsPerUnitMultiplier: 2.5
 --- !u!114 &1978922446209270716
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3542,8 +3541,8 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 4193473235435103969}
-  - component: {fileID: 2425886859500974407}
   - component: {fileID: 5108145172816027755}
+  - component: {fileID: 2425886859500974407}
   - component: {fileID: 6947650565823758401}
   m_Layer: 0
   m_Name: CardGameController
@@ -3568,6 +3567,22 @@ Transform:
   - {fileID: 8869861148855501164}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &5108145172816027755
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4818250737937721203}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5d17e718851449a6879986e45c458fb7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Mirror.Components::Mirror.NetworkMatch
+  syncDirection: 0
+  syncMode: 0
+  syncInterval: 0
+  MatchID: 
 --- !u!114 &2425886859500974407
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3585,22 +3600,6 @@ MonoBehaviour:
   serverOnly: 0
   visibility: 0
   hasSpawned: 0
---- !u!114 &5108145172816027755
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4818250737937721203}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5d17e718851449a6879986e45c458fb7, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Mirror.Components::Mirror.NetworkMatch
-  syncDirection: 0
-  syncMode: 0
-  syncInterval: 0
-  MatchID: 
 --- !u!114 &6947650565823758401
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3617,12 +3616,15 @@ MonoBehaviour:
   syncMode: 0
   syncInterval: 0
   _cardPrefab: {fileID: 3498564723203408028, guid: 190bdb6d3cacaa149b10c785f2419648, type: 3}
+  _deckRules: {fileID: 11400000, guid: 17ae51378553b9541aaa829314c9988a, type: 2}
+  _gameRules: {fileID: 11400000, guid: e1dbc525e00ef634cad8c5230fb06d1f, type: 2}
+  _skipFlipbook: {fileID: 8613028233966760444}
   _playerGUIPrefab: {fileID: 1550379586369496839, guid: 804331514e08bb644ba29e77c2f1d882, type: 3}
+  _reverseFlipbook: {fileID: 3606638982605031591}
   _notificationView: {fileID: 3327447790147429473}
   _gameEndManager: {fileID: 1928603444887653624}
   _gameButtonManager: {fileID: 5790910801926961364}
-  _skipFlipbook: {fileID: 8613028233966760444}
-  _reverseFlipbook: {fileID: 3606638982605031591}
+  _cardVisualDatabase: {fileID: 11400000, guid: 2a8054680b50acd4baa8da10c195e114, type: 2}
   _quitButton: {fileID: 104889243998392647}
   _pauseButton: {fileID: 9004346894302111613}
   _resumeButton: {fileID: 5211018988856557163}
@@ -3645,11 +3647,8 @@ MonoBehaviour:
   _cardDrawGameobject: {fileID: 1741146029258031769}
   _playerGUIsParent: {fileID: 3987862564752941135}
   _cardTargetTransform: {fileID: 8923102032844777173}
-  _turnTimeLimit: 10
-  _gameTimeLimit: 10
   _playMoveDuration: 0.3
   _countdownStepDuration: 1
-  _notificationDisplayDuration: 2
 --- !u!1 &4871076395921247785
 GameObject:
   m_ObjectHideFlags: 0
@@ -4138,6 +4137,7 @@ RectTransform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 3007321839721461851}
+  - {fileID: 4845317154253593449}
   - {fileID: 7182407635873591711}
   - {fileID: 5600218929878740219}
   m_Father: {fileID: 8869861148855501164}
@@ -4476,8 +4476,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 1, y: 0}
   m_AnchorMax: {x: 1, y: 0}
-  m_AnchoredPosition: {x: -57, y: 0}
-  m_SizeDelta: {x: 325, y: 91.5}
+  m_AnchoredPosition: {x: -57, y: -16.4}
+  m_SizeDelta: {x: 325, y: 102}
   m_Pivot: {x: 1, y: -1}
 --- !u!222 &3561739746584643783
 CanvasRenderer:
@@ -4508,7 +4508,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls: []
   m_Sprite: {fileID: 21300000, guid: c8c8a0e51743f6449b547ed83d369776, type: 3}
-  m_Type: 0
+  m_Type: 1
   m_PreserveAspect: 1
   m_FillCenter: 1
   m_FillMethod: 4
@@ -4516,7 +4516,7 @@ MonoBehaviour:
   m_FillClockwise: 1
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
-  m_PixelsPerUnitMultiplier: 1
+  m_PixelsPerUnitMultiplier: 2.5
 --- !u!114 &6235235227689331713
 MonoBehaviour:
   m_ObjectHideFlags: 0

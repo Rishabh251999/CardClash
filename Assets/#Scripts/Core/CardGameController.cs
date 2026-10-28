@@ -3,7 +3,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Xml.Linq;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -37,12 +36,15 @@ namespace CardClash
 
         [Header("Script References")]
         [SerializeField] private Card _cardPrefab;
+        [SerializeField] private DeckRulesSO _deckRules;
+        [SerializeField] private GameRulesSO _gameRules;
+        [SerializeField] private SpriteFlipbook _skipFlipbook;
         [SerializeField] private GamePlayerGUI _playerGUIPrefab;
+        [SerializeField] private SpriteFlipbook _reverseFlipbook;
         [SerializeField] private NotificationView _notificationView;
         [SerializeField] private CardGameEndManager _gameEndManager;
         [SerializeField] private GameButtonManager _gameButtonManager;
-        [SerializeField] private SpriteFlipbook _skipFlipbook;
-        [SerializeField] private SpriteFlipbook _reverseFlipbook;
+        [SerializeField] private CardVisualDatabaseSO _cardVisualDatabase;
 
         #endregion
 
@@ -114,8 +116,6 @@ namespace CardClash
 
         #region Inspector - Game Settings
 
-        [SerializeField] private float _turnTimeLimit = 15f;
-        [SerializeField] private float _gameTimeLimit = 300f;
         [SerializeField] private float _playMoveDuration = 0.3f;
         [SerializeField] private float _countdownStepDuration = 1f;
 
@@ -147,7 +147,7 @@ namespace CardClash
 
         private readonly CardTurnStateMachine _turnState = new();
         private readonly PlayerHandRegistry _playerRegistry = new();
-        private readonly CardEffectResolver _cardEffects = new();
+        private CardEffectResolver _cardEffects;
 
         private Action<CardColor> _onColorChosen;
 
@@ -157,6 +157,7 @@ namespace CardClash
         private Coroutine _notificationHideCoroutine;
 
         private bool _matchEnded;
+        private bool _allowStacking = true;
         private bool _isGameRunningLocally;
         private bool _isTimerRunningLocally;
         private bool _awaitingDrawnCardDecision;
@@ -166,13 +167,6 @@ namespace CardClash
 
         #endregion
 
-
-        #region Inspector - Notification Settings
-
-        [SerializeField]
-        private float _notificationDisplayDuration = 2f;
-
-        #endregion
 
 
         #region Network Synced State
@@ -200,6 +194,8 @@ namespace CardClash
 
         private void Awake()
         {
+            _cardEffects = new CardEffectResolver();
+
             _canvasGroup = _canvas.GetComponent<CanvasGroup>();
             _cardDrawButton = _cardDrawGameobject.GetComponent<Button>();
 
@@ -234,7 +230,7 @@ namespace CardClash
         private void UpdateTurnTimerUI()
         {
             var elapsed = NetworkTime.time - _turnStartTime;
-            var normalized = _turnTimeLimit > 0f ? 1f - (float)(elapsed / _turnTimeLimit) : 0f;
+            var normalized = _gameRules.TurnTimeLimit > 0f ? 1f - (float)(elapsed / _gameRules.TurnTimeLimit) : 0f;
             normalized = Mathf.Clamp01(normalized);
 
             // Only update the shared ring if it represents the local player's turn
@@ -258,7 +254,7 @@ namespace CardClash
                 return;
 
             var elapsed = NetworkTime.time - _gameStartTime;
-            var remaining = Mathf.Max(0f, _gameTimeLimit - (float)elapsed);
+            var remaining = Mathf.Max(0f, _gameRules.GameTimeLimit - (float)elapsed);
 
             var totalSeconds = Mathf.FloorToInt(remaining);
 
@@ -608,7 +604,7 @@ namespace CardClash
                 NetworkServer.Destroy(conn.identity.gameObject);
             }
 
-            if (_turnState.PlayerCount <= 1)
+            if (_turnState.PlayerCount < _gameRules.MinPlayers)
             {
                 EndMatch();
                 return;
@@ -637,7 +633,7 @@ namespace CardClash
                 {
                     clientRoomOperation = ClientRoomOperation.MatchEndedByOwner,
 
-                    errorMessage = "The room owner has left. The match has ended."
+                    errorMessage = "The match has ended because there aren't enough players left."
                 });
 
                 if (entry.Conn.identity != null)
@@ -657,11 +653,12 @@ namespace CardClash
         #region Server - Game Setup
 
         [Server]
-        public void StartGame(CardDeck deck, int cardsPerPlayer)
+        public void StartGame(CardDeck deck, int cardsPerPlayer, bool allowStacking)
         {
             _deck = deck;
 
             _cardPerPlayer = cardsPerPlayer;
+            _allowStacking = allowStacking;
 
             _pendingDraw = default;
 
@@ -707,7 +704,7 @@ namespace CardClash
         [Server]
         private IEnumerator GameTimerRoutine()
         {
-            yield return new WaitForSeconds(_gameTimeLimit);
+            yield return new WaitForSeconds(_gameRules.GameTimeLimit);
 
             Debug.Log("[Server] Game time limit reached. Ending match.");
 
@@ -810,7 +807,7 @@ namespace CardClash
         [Server]
         private IEnumerator TurnTimerRoutine(uint netIdForThisTurn)
         {
-            var endTime = NetworkTime.time + _turnTimeLimit;
+            var endTime = NetworkTime.time + _gameRules.TurnTimeLimit;
 
             while (NetworkTime.time < endTime)
                 yield return null;
@@ -861,8 +858,6 @@ namespace CardClash
 
             var tint = ToUnityColor(_syncedTopDiscard.Color);
 
-            // Play the skip effect once the skipped player's turn would have started/ended,
-            // i.e. after the current play animation/transition completes.
             StartCoroutine(InvokeAfterDelay(_playMoveDuration,
                 () => RpcPlaySkipEffect(skippedNetId, tint)));
         }
@@ -978,7 +973,7 @@ namespace CardClash
 
             SetTopDiscard(card, _deck.DrawPileCount);
 
-            RpcPlayDiscardEffect(card);
+            RpcPlayDiscardEffect(card, _turnState.TurnDirection);
 
             var data = _playerData[netId];
 
@@ -1060,7 +1055,7 @@ namespace CardClash
         private bool IsPlayableAgainstTop(GameCard card)
         {
             if (_pendingDraw.Count > 0)
-                return card.Type == _pendingDraw.Type;
+                return _allowStacking && card.Type == _pendingDraw.Type;
 
             if (_deck.TopDiscard is not { } topCard)
                 return true;
@@ -1074,7 +1069,7 @@ namespace CardClash
                 CardType.Number when topCard.Type is CardType.Number
                     && card.FaceValue == topCard.FaceValue => true,
 
-                not CardType.Number when card.Type == topCard.Type => true, // only Skip/Reverse/DrawTwo match by type alone
+                not CardType.Number when card.Type == topCard.Type => true,
 
                 _ => false
             };
@@ -1085,7 +1080,7 @@ namespace CardClash
         {
             _syncedTopDiscard = card;
 
-            RpcShowTopDiscard(card, drawCount, _turnState.TurnDirection);
+            RpcShowTopDiscard(card, drawCount);
         }
 
         [Server]
@@ -1099,13 +1094,13 @@ namespace CardClash
             if (!_playerData.TryGetValue(netId, out var data))
                 return;
 
-            if (_playerRegistry.GetHandCount(netId) > 2)
+            if (_playerRegistry.GetHandCount(netId) > _gameRules.LastCardCallThreshold)
             {
                 conn.Send(new ClientDeckMessage
                 {
                     clientDeckOperation = ClientDeckOperation.Error,
 
-                    errorMessage = "You can only call LAST CARD when you have 2 cards or fewer."
+                    errorMessage = $"You can only call LAST CARD when you have {_gameRules.LastCardCallThreshold} cards or fewer."
                 });
 
                 return;
@@ -1148,7 +1143,7 @@ namespace CardClash
         {
             Debug.Log($"[Server] netId {netId} failed to call LAST CARD. Applying penalty draw.");
 
-            ForcePlayerDraw(netId, 1);
+            ForcePlayerDraw(netId, _gameRules.MissedLastCardPenalty);
 
             ResetLastCardCall(netId);
         }
@@ -1199,7 +1194,7 @@ namespace CardClash
                 TargetPlayPenaltyDrawSound(entry.Conn);
             }
 
-            RpcShowTopDiscard(_syncedTopDiscard, _deck.DrawPileCount, _turnState.TurnDirection);
+            RpcShowTopDiscard(_syncedTopDiscard, _deck.DrawPileCount);
         }
 
         [TargetRpc]
@@ -1300,7 +1295,7 @@ namespace CardClash
                 CanPlayDrawnCard = canPlay
             });
 
-            RpcShowTopDiscard(_syncedTopDiscard, _deck.DrawPileCount, _turnState.TurnDirection);
+            RpcShowTopDiscard(_syncedTopDiscard, _deck.DrawPileCount);
 
             if (canPlay)
             {
@@ -1355,7 +1350,7 @@ namespace CardClash
                 StopCoroutine(_notificationHideCoroutine);
                 _notificationHideCoroutine = null;
             }
-            _notificationHideCoroutine = StartCoroutine(HideNotificationAfterDelay(_notificationDisplayDuration));
+            _notificationHideCoroutine = StartCoroutine(HideNotificationAfterDelay(_gameRules.NotificationDisplayDuration));
         }
 
         [Server]
@@ -1571,9 +1566,9 @@ namespace CardClash
             RpcResetForRestart();
 
             var deck = new CardDeck();
-            deck.BuildDeck();
+            deck.BuildDeck(_deckRules);
 
-            StartGame(deck, _cardPerPlayer);
+            StartGame(deck, _cardPerPlayer, _allowStacking);
         }
 
         #endregion
@@ -1810,44 +1805,34 @@ namespace CardClash
         #region Client RPC - Card State
 
         [ClientRpc]
-        private void RpcShowTopDiscard(GameCard card, int drawCount, int turnDirection)
+        private void RpcShowTopDiscard(GameCard card, int drawCount)
         {
             if (this == null || !gameObject.activeInHierarchy)
                 return;
 
             _syncedTopDiscard = card;
 
-            if (Card.CardSprites.TryGetValue(card.Id, out var sprite))
+            if (_cardVisualDatabase.GetSprite(card) is { } sprite)
             {
                 _topDiscardImage.color = new Color(1f, 1f, 1f, 1f);
-
                 _topDiscardImage.sprite = sprite;
             }
 
             _drawPileCountText.text = $"{drawCount} left";
-
-            if (_reverseFlipbook is not { })
-            {
-                _reverseFlipbook.SetDirection(turnDirection);
-            }
-
-            if (card.Type is CardType.Reverse && _reverseFlipbook is { })
-            {
-                _reverseFlipbook.SetDirection(turnDirection);
-                _reverseFlipbook.Play(ToUnityColor(card.Color));
-            }
         }
 
         [ClientRpc]
-        private void RpcPlayDiscardEffect(GameCard card)
+        private void RpcPlayDiscardEffect(GameCard card, int turnDirection)
         {
             if (this == null || !gameObject.activeInHierarchy)
                 return;
 
             if (card.Type is CardType.Reverse && _reverseFlipbook is { })
             {
+                _reverseFlipbook.SetDirection(turnDirection);
                 _reverseFlipbook.Play(ToUnityColor(card.Color));
                 AudioManager.Instance.PlaySoundEffect("reverse");
+                VibrationUtility.Vibrate(milliseconds: 250, amplitude: 255);
             }
         }
 
@@ -1860,11 +1845,17 @@ namespace CardClash
             if (GetPlayerGUI(skippedNetId) is { } skippedPlayerGUI)
                 skippedPlayerGUI.PlaySkipEffect(tint);
 
-            // Only play the big on-screen skip flipbook for the player who was actually skipped.
-            if (_skipFlipbook is { } && NetworkClient.localPlayer is { netId: var selfNetId } && selfNetId == skippedNetId)
+            // Only play the big on-screen skip flipbook, sound, and vibration
+            // for the player who was actually skipped.
+            if (NetworkClient.localPlayer is { netId: var selfNetId } && selfNetId == skippedNetId)
             {
-                _skipFlipbook.Play(tint);
+                if (_skipFlipbook is { })
+                {
+                    _skipFlipbook.Play(tint);
+                }
+
                 AudioManager.Instance.PlaySoundEffect("skip");
+                VibrationUtility.Vibrate(milliseconds: 250, amplitude: 255);
             }
         }
 
@@ -1926,8 +1917,8 @@ namespace CardClash
         {
             _isGameRunningLocally = true;
 
-            var timer = $"{Mathf.FloorToInt(_gameTimeLimit / 60f):00}:" +
-                    $"{Mathf.FloorToInt(_gameTimeLimit % 60f):00}";
+            var timer = $"{Mathf.FloorToInt(_gameRules.GameTimeLimit / 60f):00}:" +
+                    $"{Mathf.FloorToInt(_gameRules.GameTimeLimit % 60f):00}";
 
             _gameTimerText.SetText($"{timer}");
         }
@@ -2027,7 +2018,8 @@ namespace CardClash
             if (_lastCardButton == null)
                 return;
 
-            var canReachLastCard = _handCards.Count <= 2 && _handCards.Exists(card => IsValidPlay(card.CardData));
+            var canReachLastCard = _handCards.Count <= _gameRules.LastCardCallThreshold && 
+                _handCards.Exists(card => IsValidPlay(card.CardData));
             var lastCard = IsMyTurn() && canReachLastCard && !HasLocallyCalledLastCard();
 
             _gameButtonManager.SetCallOutButtonInteractable(lastCard);

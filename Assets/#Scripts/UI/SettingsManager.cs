@@ -1,13 +1,10 @@
-
-using System;
-using System.Collections;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
 namespace CardClash
 {
-    public class ProfileManager : MonoBehaviour
+    public class SettingsManager : MonoBehaviour
     {
         #region Constants
 
@@ -36,9 +33,9 @@ namespace CardClash
         [Header("References")]
         [SerializeField] private UIManager _uiManager;
 
-        [SerializeField] private SettingsData _musicToggle;
-        [SerializeField] private SettingsData _soundToggle;
-        [SerializeField] private SettingsData _vibrationToggle;
+        [SerializeField] private ToggleData _musicToggle;
+        [SerializeField] private ToggleData _soundToggle;
+        [SerializeField] private ToggleData _vibrationToggle;
 
         #endregion
 
@@ -65,15 +62,6 @@ namespace CardClash
 
         #region Runtime Settings 
 
-        [Header("Runtime Settings")]
-        [Space(5f)]
-
-        [SerializeField, Min(0f)]
-        private float _toggleAnimDuration = 0.12f;
-
-        [SerializeField, Range(0.1f, 1f)]
-        private float _toggleSquashScale = 0.85f;
-
         #endregion
 
         #region Runtime State
@@ -84,13 +72,9 @@ namespace CardClash
         private bool _originalSoundEnabled;
         private bool _originalVibrationEnabled;
 
-        private Coroutine _musicAnimation;
-        private Coroutine _soundAnimation;
-        private Coroutine _vibrationAnimation;
-
-        private Vector3 _musicOriginalScale;
-        private Vector3 _soundOriginalScale;
-        private Vector3 _vibrationOriginalScale;
+        private ToggleAnimator _musicAnimator;
+        private ToggleAnimator _soundAnimator;
+        private ToggleAnimator _vibrationAnimator;
 
         private bool HasUnsavedChanges => _usernameInputField.text != _originalUsername || _musicToggle.toggle.isOn != 
             _originalMusicEnabled || _soundToggle.toggle.isOn != _originalSoundEnabled || 
@@ -102,9 +86,9 @@ namespace CardClash
 
         private void Awake()
         {
-            _musicOriginalScale = _musicToggle.toggle.image.rectTransform.localScale;
-            _soundOriginalScale = _musicToggle.toggle.image.rectTransform.localScale;
-            _vibrationOriginalScale = _vibrationToggle.toggle.image.rectTransform.localScale;
+            _musicAnimator = new(this, _musicToggle.toggle, _onSprite, _offSprite);
+            _soundAnimator = new(this, _soundToggle.toggle, _onSprite, _offSprite);
+            _vibrationAnimator = new(this, _vibrationToggle.toggle, _onSprite, _offSprite);
         }
 
         private void Start()
@@ -136,9 +120,9 @@ namespace CardClash
             if (_uiManager != null)
                 _uiManager.OnStateChanged -= OnStateChanged;
 
-            StopToggleAnimation(_musicToggle, ref _musicAnimation, _musicOriginalScale);
-            StopToggleAnimation(_soundToggle, ref _soundAnimation, _soundOriginalScale);
-            StopToggleAnimation(_vibrationToggle, ref _vibrationAnimation, _vibrationOriginalScale);
+            _musicAnimator.StopAnimation();
+            _soundAnimator.StopAnimation();
+            _vibrationAnimator.StopAnimation();
         }
 
         private void OnStateChanged(ScreenType state)
@@ -186,14 +170,14 @@ namespace CardClash
 
         #region Toggle Visuals
 
-        private void SetToggleVisualInstant(SettingsData data)
+        private void SetToggleVisualInstant(ToggleData data)
         {
             data.toggle.image.sprite = data.toggle.isOn ? _onSprite : _offSprite;
 
             UpdateStatusText(data);
         }
 
-        private void UpdateStatusText(SettingsData data)
+        private void UpdateStatusText(ToggleData data)
         {
             bool isOn = data.toggle.isOn;
 
@@ -205,105 +189,30 @@ namespace CardClash
         {
             AudioManager.Instance.PlaySoundEffect(isOn ? ToggleOnSfx : ToggleOffSfx);
 
-            HandleToggleChanged(_musicToggle, ref _musicAnimation, _musicOriginalScale);
+            HandleToggleChanged(_musicToggle, _musicAnimator);
         }
 
         private void OnSoundToggleChanged(bool isOn)
         {
             AudioManager.Instance.PlaySoundEffect(isOn ? ToggleOnSfx : ToggleOffSfx);
 
-            HandleToggleChanged(_soundToggle, ref _soundAnimation, _soundOriginalScale);
+            HandleToggleChanged(_soundToggle, _soundAnimator);
         }
 
         private void OnVibrationToggleChanged(bool isOn)
         {
             AudioManager.Instance.PlaySoundEffect(isOn ? ToggleOnSfx : ToggleOffSfx);
 
-            HandleToggleChanged(_vibrationToggle, ref _vibrationAnimation, _vibrationOriginalScale);
+            HandleToggleChanged(_vibrationToggle, _vibrationAnimator);
         }
 
-        private void HandleToggleChanged(SettingsData data, ref Coroutine animation, Vector3 originalScale)
+        private void HandleToggleChanged(ToggleData data, ToggleAnimator animator)
         {
             UpdateStatusText(data);
 
-            StopToggleAnimation(data, ref animation, originalScale);
-
-            if (_toggleAnimDuration <= 0f)
-            {
-                SetToggleVisualInstant(data);
-            }
-            else
-            {
-                animation = StartCoroutine(AnimateToggle(data, originalScale));
-            }
+            animator.Play();
 
             RefreshSaveButton();
-        }
-
-        private void StopToggleAnimation(SettingsData data, ref Coroutine animation, Vector3 originalScale)
-        {
-            if (animation != null)
-            {
-                StopCoroutine(animation);
-                animation = null;
-            }
-
-            if (data.toggle.image != null)
-            {
-                data.toggle.image.rectTransform.localScale =
-                    originalScale;
-            }
-        }
-
-        private IEnumerator AnimateToggle(SettingsData data, Vector3 originalScale)
-        {
-            var rect = data.toggle.image.rectTransform;
-
-            var squashedScale = originalScale * _toggleSquashScale;
-
-            var halfDuration = _toggleAnimDuration * 0.5f;
-            var elapsed = 0f;
-
-            while (elapsed < halfDuration)
-            {
-                elapsed += Time.deltaTime;
-
-                rect.localScale = Vector3.Lerp(originalScale, squashedScale, Mathf.Clamp01(elapsed / halfDuration));
-
-                yield return null;
-            }
-
-            rect.localScale = squashedScale;
-
-            data.toggle.image.sprite = data.toggle.isOn ? _onSprite : _offSprite;
-
-            elapsed = 0f;
-
-            while (elapsed < halfDuration)
-            {
-                elapsed += Time.deltaTime;
-
-                rect.localScale = Vector3.Lerp(squashedScale, originalScale, Mathf.Clamp01(elapsed / halfDuration));
-
-                yield return null;
-            }
-
-            rect.localScale = originalScale;
-
-            switch (data)
-            {
-                case var d when d == _soundToggle:
-                    _soundAnimation = null;
-                    break;
-
-                case var d when d == _musicToggle:
-                    _musicAnimation = null;
-                    break;
-
-                default:
-                    _vibrationAnimation = null;
-                    break;
-            }
         }
 
         private void OnUsernameValueChanged(string username)
@@ -365,12 +274,5 @@ namespace CardClash
         }
 
         #endregion
-    }
-
-    [Serializable]
-    public class SettingsData
-    {
-        public TextMeshProUGUI statusText;
-        public Toggle toggle;
     }
 }

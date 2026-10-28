@@ -711,6 +711,7 @@ PlayerSettings:
   il2cppLTOMode: {}
   il2cppStacktraceInformation:
     Android: 1
+    Server: 1
   managedStrippingLevel: {}
   incrementalIl2cppBuild: {}
   suppressCommonWarnings: 1

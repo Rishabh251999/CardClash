@@ -1,4 +1,3 @@
-using Mirror;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -13,6 +12,10 @@ namespace CardClash
         [SerializeField] private List<PanelEntry> _panels;
         [SerializeField] private float _fadeDuration = 0.25f;
         [SerializeField] private float _fadeInDelay = 0.1f;
+
+        [Header("Scale Transition")]
+        [Tooltip("Starting/ending scale for a panel when it is hidden (1 = no scale effect).")]
+        [SerializeField, Range(0.5f, 1f)] private float _hiddenScale = 0.95f;
 
         #endregion
 
@@ -36,14 +39,14 @@ namespace CardClash
 
             var hasSavedUserName = !string.IsNullOrWhiteSpace(PlayerPrefs.GetString("UserName", string.Empty));
 
-            if(hasSavedUserName)
+            if (hasSavedUserName)
             {
                 SetState(ScreenType.Loading, true);
             }
 
             else
             {
-                SetState(ScreenType.Login,true);
+                SetState(ScreenType.Login, true);
             }
         }
 
@@ -95,6 +98,7 @@ namespace CardClash
             group.alpha = visible ? 1f : 0f;
             group.interactable = visible;
             group.blocksRaycasts = visible;
+            group.transform.localScale = visible ? Vector3.one : Vector3.one * _hiddenScale;
         }
 
         private IEnumerator FadeInDelayed(CanvasGroup group, ScreenType screenType)
@@ -111,6 +115,9 @@ namespace CardClash
             var startAlpha = group.alpha;
             var targetAlpha = visible ? 1f : 0f;
 
+            var startScale = group.transform.localScale;
+            var targetScale = visible ? Vector3.one : Vector3.one * _hiddenScale;
+
             if (visible)
                 group.blocksRaycasts = true;
             else
@@ -121,11 +128,16 @@ namespace CardClash
             {
                 elapsed += Time.deltaTime;
                 float t = Mathf.Clamp01(elapsed / _fadeDuration);
-                group.alpha = Mathf.Lerp(startAlpha, targetAlpha, t);
+                float smoothT = Mathf.SmoothStep(0f, 1f, t);
+
+                group.alpha = Mathf.Lerp(startAlpha, targetAlpha, smoothT);
+                group.transform.localScale = Vector3.Lerp(startScale, targetScale, smoothT);
+
                 yield return null;
             }
 
             group.alpha = targetAlpha;
+            group.transform.localScale = targetScale;
             group.interactable = visible;
             group.blocksRaycasts = visible;
 

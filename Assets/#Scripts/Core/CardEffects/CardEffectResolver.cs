@@ -8,19 +8,22 @@ namespace CardClash
     /// </summary>
     public sealed class CardEffectResolver
     {
-        private static readonly ICardEffect Default = new DefaultCardEffect();
+        private readonly ICardEffect Default = new DefaultCardEffect();
 
-        private readonly Dictionary<CardType, ICardEffect> _effects = new()
-        {
-            { CardType.Reverse, new ReverseCardEffect() },
-            { CardType.Skip, new SkipCardEffect() },
-            { CardType.DrawTwo, new DrawTwoCardEffect() },
-            { CardType.WildDrawFour, new WildDrawFourCardEffect() },
-        };
+        private readonly Dictionary<CardType, ICardEffect> _effects;
 
-        public ICardEffect Resolve(CardType type)
+        public CardEffectResolver()
         {
-            return _effects.TryGetValue(type, out var effect) ? effect : Default;
+            _effects = new Dictionary<CardType, ICardEffect>
+            {
+                { CardType.Skip, new SkipCardEffect() },
+                { CardType.Reverse, new ReverseCardEffect() },
+                { CardType.DrawTwo, new DrawTwoCardEffect(2) },
+                { CardType.WildDrawFour, new WildDrawFourCardEffect(4) },
+            };
         }
+
+        public ICardEffect Resolve(CardType type) =>
+            _effects.TryGetValue(type, out var effect) ? effect : Default;
     }
 }

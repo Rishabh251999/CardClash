@@ -1,0 +1,210 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1a24210f0f4c691469a739fed1174c41, type: 3}
+  m_Name: CardVisualDatabase
+  m_EditorClassIdentifier: Assembly-CSharp::CardClash.CardVisualDatabaseSO
+  _numberCards:
+  - Color: 1
+    FaceValue: 0
+    Sprite: {fileID: -249377125660422933, guid: f716c3391ca2d1f43b14388279570c47, type: 3}
+  - Color: 1
+    FaceValue: 1
+    Sprite: {fileID: 1576479164325655169, guid: c296111160f2cb34bbf0155b46d32f83, type: 3}
+  - Color: 1
+    FaceValue: 2
+    Sprite: {fileID: -2365338978563116705, guid: cb8673a23aa3cf04aa560c49ea4e8baf, type: 3}
+  - Color: 1
+    FaceValue: 3
+    Sprite: {fileID: -6321854236844008304, guid: d741466ed1cfb7b4f9f02855b0efd69a, type: 3}
+  - Color: 1
+    FaceValue: 4
+    Sprite: {fileID: -4914693277832164576, guid: a8a127e6fa4c8154ba794ee621211386, type: 3}
+  - Color: 1
+    FaceValue: 5
+    Sprite: {fileID: 8483853964939581952, guid: a8e855f33502dbd4e8317e5c3222266a, type: 3}
+  - Color: 1
+    FaceValue: 6
+    Sprite: {fileID: 21300000, guid: 787d5538df9420449856238abc04a803, type: 3}
+  - Color: 1
+    FaceValue: 7
+    Sprite: {fileID: 21300000, guid: afb4045045c12b94785822c2ab1fd34f, type: 3}
+  - Color: 1
+    FaceValue: 8
+    Sprite: {fileID: 21300000, guid: 768b83a13f6eeb3409d12a8fe5493b31, type: 3}
+  - Color: 1
+    FaceValue: 9
+    Sprite: {fileID: 21300000, guid: 6dbc252e156ab5e4cafbf6f2faf2ce5f, type: 3}
+  - Color: 3
+    FaceValue: 0
+    Sprite: {fileID: 5413057936140843819, guid: 8629d05ecce03534bbfdcb648eda53f2, type: 3}
+  - Color: 3
+    FaceValue: 1
+    Sprite: {fileID: 949571133561506956, guid: 3c63639d102f7c5418e035e753c811e8, type: 3}
+  - Color: 3
+    FaceValue: 2
+    Sprite: {fileID: 1212900621034218311, guid: f066a1986b844ce45b70f85b201be889, type: 3}
+  - Color: 3
+    FaceValue: 3
+    Sprite: {fileID: -5347480379674745182, guid: 3ca67d036e7e446419d17694465ddfc9, type: 3}
+  - Color: 3
+    FaceValue: 4
+    Sprite: {fileID: -5369153306969932305, guid: 4e5dc8f53fcf3a440bf30a9d1e92aa32, type: 3}
+  - Color: 3
+    FaceValue: 5
+    Sprite: {fileID: 8374039875516635433, guid: fcc58e730e2537841830b471dbf16f11, type: 3}
+  - Color: 3
+    FaceValue: 6
+    Sprite: {fileID: -4485866815172015416, guid: 83c8b18788a641c43847ac8c81f9aafd, type: 3}
+  - Color: 3
+    FaceValue: 7
+    Sprite: {fileID: 254052604707246049, guid: b8b2c9940622ed74081fd24f9cb48ff7, type: 3}
+  - Color: 3
+    FaceValue: 8
+    Sprite: {fileID: -7954603889195718701, guid: 48dc8ef04a4888345b41e31de9d7e73c, type: 3}
+  - Color: 3
+    FaceValue: 9
+    Sprite: {fileID: 1952660869571585519, guid: f9013d96853bd514db6247e4b951334a, type: 3}
+  - Color: 4
+    FaceValue: 0
+    Sprite: {fileID: 371394097520866409, guid: a5937dc0de29f0349a4725c3422ed3d5, type: 3}
+  - Color: 4
+    FaceValue: 1
+    Sprite: {fileID: 2114939304942317460, guid: 412c03d73cbc4f54083c91ab88487eb6, type: 3}
+  - Color: 4
+    FaceValue: 2
+    Sprite: {fileID: 4456493401876371339, guid: 9c56e3deee1cb6742869a1150391b308, type: 3}
+  - Color: 4
+    FaceValue: 3
+    Sprite: {fileID: -7882214922087695536, guid: e5bcb27dc61a8de48912f5ff520d0440, type: 3}
+  - Color: 4
+    FaceValue: 4
+    Sprite: {fileID: 6088028037226107009, guid: 1920f0290df31e040bee269a0507d08f, type: 3}
+  - Color: 4
+    FaceValue: 5
+    Sprite: {fileID: 8183703129083708372, guid: 9fb541a60b52c8f469cb6571bf8a4b8c, type: 3}
+  - Color: 4
+    FaceValue: 6
+    Sprite: {fileID: 1035811146341020437, guid: 346050880e5810243b4058bbf8787497, type: 3}
+  - Color: 4
+    FaceValue: 7
+    Sprite: {fileID: 4360157255746360584, guid: f7ea9f90c6f88b045a4c9ac91d1233e4, type: 3}
+  - Color: 4
+    FaceValue: 8
+    Sprite: {fileID: 9132625577407226825, guid: 9f7d09b3e728fd34bb90106913975192, type: 3}
+  - Color: 4
+    FaceValue: 9
+    Sprite: {fileID: 5372860851645618649, guid: 9c97061f327a3c34d95eabc7ad81c80f, type: 3}
+  - Color: 2
+    FaceValue: 0
+    Sprite: {fileID: 21300000, guid: 6a22c3af4b878d640aa8e0304f036497, type: 3}
+  - Color: 2
+    FaceValue: 1
+    Sprite: {fileID: 21300000, guid: 275de4f491ed20f478f8a5febf948f56, type: 3}
+  - Color: 2
+    FaceValue: 2
+    Sprite: {fileID: 21300000, guid: af89e6845896e39428cfa7cce99c54c9, type: 3}
+  - Color: 2
+    FaceValue: 3
+    Sprite: {fileID: 21300000, guid: cc75d8157e4d045419dd5add6dae5ec6, type: 3}
+  - Color: 2
+    FaceValue: 4
+    Sprite: {fileID: 21300000, guid: 6144b21409df2774583d1572bb5ad08c, type: 3}
+  - Color: 2
+    FaceValue: 5
+    Sprite: {fileID: 21300000, guid: 8d380b353a5e41542b042ffae3c51ba0, type: 3}
+  - Color: 2
+    FaceValue: 6
+    Sprite: {fileID: 21300000, guid: 5b4ffbced72e8b649b00313a600e6624, type: 3}
+  - Color: 2
+    FaceValue: 7
+    Sprite: {fileID: 21300000, guid: 49edf88a3efb1764abae1f28704fdd31, type: 3}
+  - Color: 2
+    FaceValue: 8
+    Sprite: {fileID: 21300000, guid: 299d77bb62a73b84f8b37cb4026e1275, type: 3}
+  - Color: 2
+    FaceValue: 9
+    Sprite: {fileID: 21300000, guid: a4539265fd9fa7149aaf1048292658c1, type: 3}
+  _actionCards:
+  - Color: 1
+    Type: 1
+    Sprite: {fileID: 21300000, guid: e53ea8152780d5343a3c755a468e626b, type: 3}
+  - Color: 1
+    Type: 2
+    Sprite: {fileID: 21300000, guid: 18f38c4faf305384f974f0cf7bd91192, type: 3}
+  - Color: 1
+    Type: 3
+    Sprite: {fileID: 21300000, guid: b5fcdce41bfaa3a409e0ae3708c46551, type: 3}
+  - Color: 1
+    Type: 1
+    Sprite: {fileID: 21300000, guid: e53ea8152780d5343a3c755a468e626b, type: 3}
+  - Color: 1
+    Type: 2
+    Sprite: {fileID: 21300000, guid: 18f38c4faf305384f974f0cf7bd91192, type: 3}
+  - Color: 1
+    Type: 3
+    Sprite: {fileID: 21300000, guid: b5fcdce41bfaa3a409e0ae3708c46551, type: 3}
+  - Color: 3
+    Type: 1
+    Sprite: {fileID: 7290285905077853348, guid: 2e751d53a7a4cc444a3c25900404b8c6, type: 3}
+  - Color: 3
+    Type: 2
+    Sprite: {fileID: -542805743920920896, guid: 1296eb96af33036408587ad4514fc2f0, type: 3}
+  - Color: 3
+    Type: 3
+    Sprite: {fileID: -1180534548793129568, guid: 08c63535487290f48b18a71b98c8aa59, type: 3}
+  - Color: 3
+    Type: 1
+    Sprite: {fileID: 7290285905077853348, guid: 2e751d53a7a4cc444a3c25900404b8c6, type: 3}
+  - Color: 3
+    Type: 2
+    Sprite: {fileID: -542805743920920896, guid: 1296eb96af33036408587ad4514fc2f0, type: 3}
+  - Color: 3
+    Type: 3
+    Sprite: {fileID: -1180534548793129568, guid: 08c63535487290f48b18a71b98c8aa59, type: 3}
+  - Color: 4
+    Type: 1
+    Sprite: {fileID: 8388043952071202886, guid: 6c18ebbfdb1541f4c894718308e2a6e0, type: 3}
+  - Color: 4
+    Type: 2
+    Sprite: {fileID: -2219656360009797627, guid: 5d7da168a3f046a41a827414b6d78e49, type: 3}
+  - Color: 4
+    Type: 3
+    Sprite: {fileID: 3511473552175745994, guid: 2069a593abdf7094cbca31c048b1386b, type: 3}
+  - Color: 4
+    Type: 1
+    Sprite: {fileID: 8388043952071202886, guid: 6c18ebbfdb1541f4c894718308e2a6e0, type: 3}
+  - Color: 4
+    Type: 2
+    Sprite: {fileID: -2219656360009797627, guid: 5d7da168a3f046a41a827414b6d78e49, type: 3}
+  - Color: 4
+    Type: 3
+    Sprite: {fileID: 3511473552175745994, guid: 2069a593abdf7094cbca31c048b1386b, type: 3}
+  - Color: 2
+    Type: 1
+    Sprite: {fileID: 21300000, guid: 41f253228deff604c9b318bdb6544d3d, type: 3}
+  - Color: 2
+    Type: 2
+    Sprite: {fileID: 21300000, guid: 99157dade3b1e5548a2adb461a843a89, type: 3}
+  - Color: 2
+    Type: 3
+    Sprite: {fileID: 21300000, guid: 6c6c5253189281f46ae8b789dc9be234, type: 3}
+  - Color: 2
+    Type: 1
+    Sprite: {fileID: 21300000, guid: 41f253228deff604c9b318bdb6544d3d, type: 3}
+  - Color: 2
+    Type: 2
+    Sprite: {fileID: 21300000, guid: 99157dade3b1e5548a2adb461a843a89, type: 3}
+  - Color: 2
+    Type: 3
+    Sprite: {fileID: 21300000, guid: 6c6c5253189281f46ae8b789dc9be234, type: 3}
+  _wildSprite: {fileID: 21300000, guid: ccdee37e7d67b534aa9100877b38689e, type: 3}
+  _wildDrawFourSprite: {fileID: 21300000, guid: aa49878dbc89e364ead459c58c6925bc, type: 3}

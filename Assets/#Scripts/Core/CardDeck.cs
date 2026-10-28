@@ -32,7 +32,7 @@ namespace CardClash
 
 
         [Server]
-        public void BuildDeck()
+        public void BuildDeck(DeckRulesSO rules)
         {
             _drawPile.Clear();
             _discardPile.Clear();
@@ -43,26 +43,41 @@ namespace CardClash
 
             foreach (var item in colors)
             {
-                _drawPile.Add(Make(ref id, item, CardType.Number, 0));
+                for (int i = 0; i < rules.ZeroCardCount; i++)
+                    _drawPile.Add(Make(ref id, item, CardType.Number, 0));
 
                 for (byte i = 1; i <= 9; i++)
                 {
-                    _drawPile.Add(Make(ref id, item, CardType.Number, i));
-                    _drawPile.Add(Make(ref id, item, CardType.Number, i));
+                    for (int d = 0; d < rules.NumberCardDuplicates; d++)
+                        _drawPile.Add(Make(ref id, item, CardType.Number, i));
                 }
 
-                for (byte i = 0; i < 2; i++)
+                // interleaved to match Card.PopulateCardSprites() ordering
+                var actionRounds = Mathf.Max(rules.SkipCount, Mathf.Max(rules.ReverseCount, rules.DrawTwoCount));
+
+                for (int i = 0; i < actionRounds; i++)
                 {
-                    _drawPile.Add(Make(ref id, item, CardType.Skip, 20));
-                    _drawPile.Add(Make(ref id, item, CardType.Reverse, 20));
-                    _drawPile.Add(Make(ref id, item, CardType.DrawTwo, 20));
+                    if (i < rules.SkipCount)
+                        _drawPile.Add(Make(ref id, item, CardType.Skip, 20));
+
+                    if (i < rules.ReverseCount)
+                        _drawPile.Add(Make(ref id, item, CardType.Reverse, 20));
+
+                    if (i < rules.DrawTwoCount)
+                        _drawPile.Add(Make(ref id, item, CardType.DrawTwo, 20));
                 }
             }
 
-            for (byte i = 0; i < 4; i++)
+            // interleaved to match Card.PopulateCardSprites() ordering
+            var wildRounds = Mathf.Max(rules.WildCount, rules.WildDrawFourCount);
+
+            for (int i = 0; i < wildRounds; i++)
             {
-                _drawPile.Add(Make(ref id, CardColor.None, CardType.Wild, 50));
-                _drawPile.Add(Make(ref id, CardColor.None, CardType.WildDrawFour, 50));
+                if (i < rules.WildCount)
+                    _drawPile.Add(Make(ref id, CardColor.None, CardType.Wild, 50));
+
+                if (i < rules.WildDrawFourCount)
+                    _drawPile.Add(Make(ref id, CardColor.None, CardType.WildDrawFour, 50));
             }
 
             Shuffle();

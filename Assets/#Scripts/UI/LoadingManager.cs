@@ -1,3 +1,4 @@
+
 using System;
 using Mirror;
 using UnityEngine;
@@ -15,7 +16,11 @@ namespace CardClash
         private const float FakeLoadingDuration = 3.0f;
         private const float ProgressSpeed = 1.0f / FakeLoadingDuration;
 
-        private const float HoldAtFullDuration = 0.5f; // how long to keep showing a full bar before finishing
+        private const float HoldAtFullDuration = 0.5f;
+
+        // Fewer steps with smooth transitions between them.
+        private const int FakeLoadingSteps = 2;
+        private const int ConnectingSteps = 5;
 
         #endregion
 
@@ -34,7 +39,9 @@ namespace CardClash
 
         #region Events
 
-        /// <summary>Raised once the bar has visually reached full and held there, right before the screen switches.</summary>
+        /// <summary>
+        /// Raised once the bar reaches full and holds before switching screens.
+        /// </summary>
         public event Action OnLoadingComplete;
 
         #endregion
@@ -47,7 +54,10 @@ namespace CardClash
         private bool _reachedFull;
         private bool _completionRaised;
         private bool _startLoading;
+
         private float _fullHoldTimer;
+        private float _fakeLoadingTimer;
+        private float _connectingTimer;
 
         #endregion
 
@@ -58,50 +68,78 @@ namespace CardClash
             if (Application.isBatchMode)
                 return;
 
-            _uiManager.OnStateChanged += HandleStateChange;
-            _uiManager.OnScreenOpened += HandleScreenOpened;
+            if (_uiManager != null)
+            {
+                _uiManager.OnStateChanged += HandleStateChange;
+                _uiManager.OnScreenOpened += HandleScreenOpened;
+            }
 
-            if (_loadingSlider is { } slider)
-                slider.fillAmount = 0f;
+            if (_loadingSlider != null)
+                _loadingSlider.fillAmount = 0f;
         }
 
         private void Update()
         {
-            if (Application.isBatchMode)
+            if (Application.isBatchMode ||
+                _loadingSlider == null ||
+                !_startLoading)
+            {
                 return;
+            }
 
-            if (_loadingSlider is not { } slider)
-                return;
-
-            if (!_startLoading)
-                return;
-
-            UpdateFakeLoading(slider);
+            UpdateFakeLoading(_loadingSlider);
 
             if (_fakeLoadingComplete && _isLoadingState)
                 ConnectToServer();
 
             if (_connectionStarted)
-                UpdateConnectingProgress(slider);
+                UpdateConnectingProgress(_loadingSlider);
         }
 
         private void OnDestroy()
         {
-            if (Application.isBatchMode)
+            if (Application.isBatchMode || _uiManager == null)
                 return;
 
             _uiManager.OnStateChanged -= HandleStateChange;
             _uiManager.OnScreenOpened -= HandleScreenOpened;
         }
 
+        #endregion
+
+        #region Loading Progress
+
         private void UpdateFakeLoading(Image slider)
         {
             if (_fakeLoadingComplete)
                 return;
 
-            slider.fillAmount = Mathf.MoveTowards(slider.fillAmount, WaitingProgress, ProgressSpeed * Time.deltaTime);
+            _fakeLoadingTimer += Time.deltaTime;
 
-            if (slider.fillAmount >= WaitingProgress)
+            float normalizedProgress = Mathf.Clamp01(
+                _fakeLoadingTimer / FakeLoadingDuration
+            );
+
+            float stepSize = WaitingProgress / FakeLoadingSteps;
+
+            int currentStep = Mathf.Min(
+                Mathf.FloorToInt(normalizedProgress * FakeLoadingSteps),
+                FakeLoadingSteps
+            );
+
+            float targetProgress = normalizedProgress >= 1f
+                ? WaitingProgress
+                : currentStep * stepSize;
+
+            // Smoothly animate toward each step.
+            slider.fillAmount = Mathf.MoveTowards(
+                slider.fillAmount,
+                targetProgress,
+                ProgressSpeed * Time.deltaTime
+            );
+
+            if (normalizedProgress >= 1f &&
+                slider.fillAmount >= WaitingProgress - 0.001f)
             {
                 slider.fillAmount = WaitingProgress;
                 _fakeLoadingComplete = true;
@@ -110,25 +148,53 @@ namespace CardClash
 
         private void UpdateConnectingProgress(Image slider)
         {
-            slider.fillAmount = Mathf.MoveTowards(slider.fillAmount, ConnectedProgress, ProgressSpeed * Time.deltaTime);
-
-            if (!_reachedFull)
+            if (_reachedFull)
             {
-                // Mark the moment the bar visually reaches full while actually connected.
-                if (NetworkClient.isConnected && slider.fillAmount >= ConnectedProgress)
-                {
-                    slider.fillAmount = ConnectedProgress;
-                    _reachedFull = true;
-                    _fullHoldTimer = 0f;
-                }
-
+                UpdateFullHold();
                 return;
             }
 
+            _connectingTimer += Time.deltaTime;
+
+            float normalizedProgress = Mathf.Clamp01(
+                _connectingTimer / FakeLoadingDuration
+            );
+
+            float remainingProgress = ConnectedProgress - WaitingProgress;
+            float stepSize = remainingProgress / ConnectingSteps;
+
+            int currentStep = Mathf.Min(
+                Mathf.FloorToInt(normalizedProgress * ConnectingSteps),
+                ConnectingSteps
+            );
+
+            float targetProgress = normalizedProgress >= 1f
+                ? ConnectedProgress
+                : WaitingProgress + currentStep * stepSize;
+
+            // Smoothly animate between step targets.
+            slider.fillAmount = Mathf.MoveTowards(
+                slider.fillAmount,
+                targetProgress,
+                ProgressSpeed * Time.deltaTime
+            );
+
+            // Finish only after the client is actually connected.
+            if (NetworkClient.isConnected &&
+                normalizedProgress >= 1f &&
+                slider.fillAmount >= ConnectedProgress - 0.001f)
+            {
+                slider.fillAmount = ConnectedProgress;
+                _reachedFull = true;
+                _fullHoldTimer = 0f;
+            }
+        }
+
+        private void UpdateFullHold()
+        {
             if (_completionRaised)
                 return;
 
-            // Keep showing the completed bar for a short moment before switching screens.
             _fullHoldTimer += Time.deltaTime;
 
             if (_fullHoldTimer >= HoldAtFullDuration)
@@ -141,16 +207,28 @@ namespace CardClash
             }
         }
 
+        #endregion
+
+        #region Connection
+
         private void ConnectToServer()
         {
-            if (NetworkClient.isConnected || NetworkClient.active)
+            if (_connectionStarted ||
+                NetworkClient.isConnected ||
+                NetworkClient.active)
+            {
                 return;
+            }
 
             Debug.Log("Connecting to server...");
 
             _connectionStarted = true;
             NetworkManager.singleton.StartClient();
         }
+
+        #endregion
+
+        #region Screen Events
 
         private void HandleStateChange(ScreenType state)
         {

@@ -155,6 +155,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05eb49bbb8dd7a4458938765f36fd376, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UNO.Card
+  _visualDatabase: {fileID: 11400000, guid: 2a8054680b50acd4baa8da10c195e114, type: 2}
   _returnWait: 0.6
   _dropHeightFraction: 0.4
   _highlight: {fileID: 6508765362113379689}

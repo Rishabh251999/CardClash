@@ -32,18 +32,24 @@ namespace CardClash
 
     public sealed class DrawTwoCardEffect : ICardEffect
     {
+        private readonly int _penalty;
+        public DrawTwoCardEffect(int penalty) => _penalty = penalty;
+
         public void Apply(ICardEffectContext ctx)
         {
-            ctx.AddPendingDraw(CardType.DrawTwo, 2);
+            ctx.AddPendingDraw(CardType.DrawTwo, _penalty);
             ctx.AdvanceTurn();
         }
     }
 
     public sealed class WildDrawFourCardEffect : ICardEffect
     {
+        private readonly int _penalty;
+        public WildDrawFourCardEffect(int penalty) => _penalty = penalty;
+
         public void Apply(ICardEffectContext ctx)
         {
-            ctx.AddPendingDraw(CardType.WildDrawFour, 4);
+            ctx.AddPendingDraw(CardType.WildDrawFour, _penalty);
             ctx.AdvanceTurn();
         }
     }

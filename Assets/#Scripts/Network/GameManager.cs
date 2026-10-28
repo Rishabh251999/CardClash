@@ -18,6 +18,7 @@ namespace CardClash
         [SerializeField] private LobbyManager _lobbyManager;
         [SerializeField] private RoomManager _roomManager;
         [SerializeField] private UIManager _uiManager;
+        [SerializeField] private DeckRulesSO _deckRules;
 
         #endregion
 
@@ -52,7 +53,7 @@ namespace CardClash
 
             _roomService = new(_serverRepo, () => SendRoomList());
 
-            _matchService = new(_serverRepo, matchControllerPrefab, () => SendRoomList());
+            _matchService = new(_serverRepo, matchControllerPrefab, _deckRules, () => SendRoomList());
 
             _reconnectService = new(_serverRepo, this, () => SendRoomList());
 
@@ -70,7 +71,7 @@ namespace CardClash
             var maxRate = Screen.resolutions.Length > 0 ? Screen.resolutions[^1].refreshRateRatio.value
                 : Screen.currentResolution.refreshRateRatio.value;
 
-            Application.targetFrameRate = Mathf.CeilToInt((float)maxRate);
+            Application.targetFrameRate = Mathf.Min(60, Mathf.CeilToInt((float)maxRate));
 
             // Disable VSync so targetFrameRate actually takes effect
             QualitySettings.vSyncCount = 0;
@@ -185,8 +186,6 @@ namespace CardClash
         [ClientCallback]
         internal void OnStartClient()
         {
-            Card.PopulateCardSprites();
-
             _clientRepo.Clear();
 
             _lobbyManager.UpdateRoomList(_clientRepo.OpenRooms);
@@ -233,7 +232,7 @@ namespace CardClash
             {
                 case ServerRoomOperation.Create:
                     _roomService.CreateRoom(
-                        conn, msg.maxPlayers, msg.startingCards);
+                        conn, msg.maxPlayers, msg.startingCards, msg.allowStacking);
                     break;
 
                 case ServerRoomOperation.Join:

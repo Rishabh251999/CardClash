@@ -32,6 +32,7 @@
   <Project Path="Unity.2D.SpriteShape.Runtime.csproj" />
   <Project Path="UnityEditor.TestRunner.csproj" />
   <Project Path="Unity.VisualScripting.Core.csproj" />
+  <Project Path="Assembly-CSharp-Editor.csproj" />
   <Project Path="Unity.RenderPipelines.Universal.Runtime.csproj" />
   <Project Path="Unity.UnifiedRayTracing.Runtime.csproj" />
   <Project Path="Mirror.Examples.csproj" />
@@ -59,6 +60,7 @@
   <Project Path="Unity.VisualScripting.State.csproj" />
   <Project Path="Unity.InternalAPIEditorBridge.001.csproj" />
   <Project Path="SimpleWebTransport.csproj" />
+  <Project Path="Unity.SysrootPackage.Editor.csproj" />
   <Project Path="UnityEditor.UI.csproj" />
   <Project Path="Unity.RenderPipelines.Universal.2D.Editor.Overrides.csproj" />
   <Project Path="Mirror.Authenticators.csproj" />
@@ -68,6 +70,7 @@
   <Project Path="EncryptionTransportEditor.csproj" />
   <Project Path="Unity.Multiplayer.Center.Common.csproj" />
   <Project Path="Unity.RenderPipelines.Core.Runtime.Shared.csproj" />
+  <Project Path="Unity.Toolchain.Win-x86_64-Linux.csproj" />
   <Project Path="Unity.RenderPipelines.Core.Editor.Shared.csproj" />
   <Project Path="Unity.DedicatedServer.Editor.Bridge.csproj" />
   <Project Path="Unity.Collections.CodeGen.csproj" />
@@ -89,6 +92,7 @@
   <Project Path="Unity.SurfaceCache.Runtime.csproj" />
   <Project Path="Unity.DedicatedServer.MultiplayerRoles.Editor.csproj" />
   <Project Path="Unity.InternalAPIEngineBridge.RenderPipelines.Core.Runtime.Shared.csproj" />
+  <Project Path="Unity.Sysroot.Linux_arm64.csproj" />
   <Project Path="Unity.InputSystem.ForUI.Editor.csproj" />
   <Project Path="Unity.CollabProxy.Editor.csproj" />
   <Project Path="Unity.DedicatedServer.CliArguments.Editor.csproj" />
@@ -98,7 +102,6 @@
   <Project Path="Unity.InternalAPIEngineBridge.004.csproj" />
   <Project Path="Unity.InputSystem.DocCodeSamples.csproj" />
   <Project Path="Unity.RenderPipelines.Universal.Shaders.csproj" />
-  <Project Path="Assembly-CSharp-Editor.csproj" />
   <Project Path="Unity.InternalAPIEditorBridge.ShaderGraph.Editor.csproj" />
   <Project Path="Unity.VisualScripting.DocCodeExamples.csproj" />
   <Project Path="Unity.PlasticSCM.Editor.Entities.csproj" />
@@ -109,4 +112,5 @@
   <Project Path="Unity.RenderPipelines.Universal.Config.Runtime.csproj" />
   <Project Path="Unity.RenderPipelines.ShaderGraph.ShaderGraphLibrary.csproj" />
   <Project Path="Unity.RenderPipelines.Core.ShaderLibrary.csproj" />
+  <Project Path="Unity.Sysroot.Linux_x86_64.csproj" />
 </Solution>

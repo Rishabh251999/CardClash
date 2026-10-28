@@ -9,13 +9,9 @@ namespace CardClash
     public class RoomInfoPanel : MonoBehaviour
     {
         #region Constants
-        private const int MinPlayers = 2;
-        private const int MaxPlayers = 8;
-        private const int DefaultPlayers = 4;
 
-        private const int MinStartingCards = 3;
-        private const int MaxStartingCards = 7;
-        private const int DefaultStartingCards = 4;
+        private readonly string _toggleOn = "Hit by a +2 or +4? Play another card\nto pass the total on the next player.";
+        private readonly string _toggleOff = "Draw cards do not stack.\nThe next player draws and loses the turn.";
 
         #endregion
 
@@ -24,6 +20,8 @@ namespace CardClash
         [Space(5f)]
 
         [SerializeField] private UIManager _uiManager;
+        [SerializeField] private GameRulesSO _gameRules;
+        [SerializeField] private ToggleData _stackCardsToggleData;
 
         #endregion
 
@@ -38,17 +36,39 @@ namespace CardClash
         [SerializeField] private Button _backButton;
         [SerializeField] private Button _createButton;
 
+        [Space(2.5f)]
+        [SerializeField] private TextMeshProUGUI _stackCardsInfoText;
+
+        #endregion
+
+        #region Sprites
+
+        [Header("Sprites")]
+        [Space(5f)]
+        [SerializeField] private Sprite _onSprite;
+        [SerializeField] private Sprite _offSprite;
+
+        #endregion
+
+        #region Runtime State
+
+        private ToggleAnimator _cardStackAnimator;
+
         #endregion
 
         #region Unity Lifecycle
 
         private void Start()
         {
-            PopulateDropdown(_maxPlayers, MinPlayers, MaxPlayers, DefaultPlayers);
-            PopulateDropdown(_startingCards, MinStartingCards, MaxStartingCards, DefaultStartingCards);
+            _cardStackAnimator = new(this, _stackCardsToggleData.toggle, _onSprite, _offSprite);
+
+            PopulateDropdown(_maxPlayers, _gameRules.MinPlayers, _gameRules.MaxPlayers, _gameRules.DefaultPlayers);
+            PopulateDropdown(_startingCards, _gameRules.MinCards, _gameRules.MaxCards, _gameRules.DefaultStartingCards);
 
             _backButton.AddListenerSafe(OnBackButtonClicked);
             _createButton.AddListenerSafe(OnCreateButtonClicked);
+
+            _stackCardsToggleData.toggle.AddListenerSafe(OnStackCardsToggleChanged);
 
             if (_uiManager is { })
                 _uiManager.OnStateChanged += OnStateChanged;
@@ -58,6 +78,8 @@ namespace CardClash
         {
             _backButton.RemoveListenerSafe(OnBackButtonClicked);
             _createButton.RemoveListenerSafe(OnCreateButtonClicked);
+
+            _stackCardsToggleData.toggle.RemoveListenerSafe(OnStackCardsToggleChanged);
 
             if (_uiManager is { })
                 _uiManager.OnStateChanged -= OnStateChanged;
@@ -87,15 +109,26 @@ namespace CardClash
 
         private void OnCreateButtonClicked()
         {
-            var maxPlayers = _maxPlayers.value + MinPlayers;
-            var startingCards = _startingCards.value + MinStartingCards;
+            var maxPlayers = _maxPlayers.value + _gameRules.MinPlayers;
+            var startingCards = _startingCards.value + _gameRules.MinCards;
 
             NetworkClient.Send(new ServerRoomMessage
             {
                 serverRoomOperation = ServerRoomOperation.Create,
                 maxPlayers = maxPlayers,
-                startingCards = startingCards
+                startingCards = startingCards,
+                allowStacking = _stackCardsToggleData.toggle.isOn
             });
+        }
+
+        private void OnStackCardsToggleChanged(bool isOn)
+        {
+            if (_stackCardsInfoText is not { })
+                return;
+
+            _stackCardsInfoText.text = _stackCardsToggleData.toggle.isOn ? _toggleOn : _toggleOff;
+
+            _cardStackAnimator.Play();
         }
 
         private void OnStateChanged(ScreenType state)
@@ -103,8 +136,15 @@ namespace CardClash
             if (state is not ScreenType.RoomInfo)
                 return;
 
-            PopulateDropdown(_maxPlayers, MinPlayers, MaxPlayers, DefaultPlayers);
-            PopulateDropdown(_startingCards, MinStartingCards, MaxStartingCards, DefaultStartingCards);
+            PopulateDropdown(_maxPlayers, _gameRules.MinPlayers, _gameRules.MaxPlayers, _gameRules.DefaultPlayers);
+            PopulateDropdown(_startingCards, _gameRules.MinCards, _gameRules.MaxCards, _gameRules.DefaultStartingCards);
+
+            _stackCardsToggleData.toggle.SetIsOnWithoutNotify(true);
+
+            _cardStackAnimator.SetVisualInstant();
+
+            if (_stackCardsInfoText is { })
+                _stackCardsInfoText.text = _toggleOn;
         }
 
         #endregion

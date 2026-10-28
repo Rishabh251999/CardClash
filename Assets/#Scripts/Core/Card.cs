@@ -23,6 +23,12 @@ namespace CardClash
 
         #endregion
 
+        #region Scripts References
+
+        [SerializeField] private CardVisualDatabaseSO _visualDatabase;
+
+        #endregion
+
         #region Inspector
 
         [Tooltip("How long to wait for the server to accept a play before the card goes back to the hand.")]
@@ -49,12 +55,6 @@ namespace CardClash
         private RectTransform _rectTransform;
         private LayoutElement _layoutElement;
         private Canvas _rootCanvas;
-
-        #endregion
-
-        #region Runtime Collections
-
-        public static readonly Dictionary<byte, Sprite> CardSprites = new();
 
         #endregion
 
@@ -390,63 +390,16 @@ namespace CardClash
 
         #region Sprites
 
-        public static void PopulateCardSprites()
-        {
-            CardSprites.Clear();
-
-            // Must match your asset names exactly
-            var colors = new string[] { "Red", "Green", "Blue", "Yellow" };
-
-            byte id = 0;
-
-            foreach (var color in colors)
-            {
-                // One zero
-                CardSprites[id++] = Load($"{color}_0");
-
-                // Two each of 1-9
-                for (int n = 1; n <= 9; n++)
-                {
-                    var s = Load($"{color}_{n}");
-                    CardSprites[id++] = s;
-                    CardSprites[id++] = s;
-                }
-
-                // Two each of Draw, Reverse, Skip
-                for (int i = 0; i < 2; i++)
-                {
-                    CardSprites[id++] = Load($"{color}_Skip");
-                    CardSprites[id++] = Load($"{color}_Reverse");
-                    CardSprites[id++] = Load($"{color}_Draw");
-                }
-            }
-
-            // Four Wild, four Wild Draw Four
-            var wild = Load("Wild");
-            var wildFour = Load("WildDrawFour");
-
-            for (int i = 0; i < 4; i++)
-            {
-                CardSprites[id++] = wild;
-                CardSprites[id++] = wildFour;
-            }
-        }
-
-        private static Sprite Load(string name)
-        {
-            var s = Resources.Load<Sprite>($"Cards/{name}");
-            if (s == null) Debug.LogWarning($"[CardView] Sprite not found: Cards/{name}");
-            return s;
-        }
-
         public void Setup(GameCard card)
         {
             CardData = card;
 
-            if (CardSprites.TryGetValue(card.Id, out Sprite sprite))
+            var sprite = _visualDatabase != null ? _visualDatabase.GetSprite(card) : null;
+
+            if (sprite != null)
                 _cardImage.sprite = sprite;
             else
-                Debug.LogWarning($"[CardView] No sprite for card Id {card.Id} ({card})");
+                Debug.LogWarning($"[CardView] No sprite for card {card}");
         }
 
         #endregion

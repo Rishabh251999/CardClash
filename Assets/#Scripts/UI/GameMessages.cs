@@ -18,10 +18,13 @@ namespace CardClash
     public struct ServerRoomMessage : NetworkMessage
     {
         public ServerRoomOperation serverRoomOperation;
+
         public Guid roomCode;
 
         public int maxPlayers;
         public int startingCards;
+
+        public bool allowStacking;
     }
 
     public struct ServerDeckMessage : NetworkMessage
@@ -65,11 +68,15 @@ namespace CardClash
     [Serializable]
     public struct RoomInfo
     {
+        [NonSerialized]
         public Guid roomCode;
+
         public int playerCount;
         public int maxPlayers;
         public int startingCards;
+
         public bool isStarted;
+        public bool allowStacking;
     }
 
     /// <summary>
@@ -85,6 +92,7 @@ namespace CardClash
         public bool isReady;
         public bool isOwner;
 
+        [NonSerialized]
         public Guid roomCode;
 
         public string playerName;
@@ -279,6 +287,29 @@ namespace CardClash
     {
         public int Count;
         public CardType Type;
+    }
+
+    [Serializable]
+    public struct NumberCardSprite
+    {
+        public CardColor Color;
+        [Range(0, 9)] public byte FaceValue;
+        public Sprite Sprite;
+    }
+
+    [Serializable]
+    public struct ActionCardSprite
+    {
+        public CardColor Color;
+        public CardType Type;
+        public Sprite Sprite;
+    }
+
+    [Serializable]
+    public struct ToggleData
+    {
+        public TextMeshProUGUI statusText;
+        public Toggle toggle;
     }
 
     #endregion
@@ -556,10 +587,7 @@ namespace CardClash
 
         #region Create Room
 
-        internal void CreateRoom(
-            NetworkConnectionToClient conn,
-            int maxPlayers,
-            int startingCards)
+        internal void CreateRoom(NetworkConnectionToClient conn, int maxPlayers, int startingCards, bool allowStacking)
         {
             if (conn == null ||
                 !_repo.PlayerInfos.TryGetValue(conn, out var playerInfo))
@@ -588,7 +616,8 @@ namespace CardClash
                 maxPlayers = maxPlayers,
                 startingCards = startingCards,
                 playerCount = 1,
-                isStarted = false
+                isStarted = false,
+                allowStacking = allowStacking
             });
 
             playerInfo.isReady = false;
@@ -854,15 +883,14 @@ namespace CardClash
     {
         private readonly ServerRoomRepository _repo;
         private readonly CardGameController _matchControllerPrefab;
-        private readonly System.Action _sendRoomList;
+        private readonly Action _sendRoomList;
+        private readonly DeckRulesSO _deckRulesSO;
 
-        public MatchService(
-            ServerRoomRepository repo,
-            CardGameController matchControllerPrefab,
-            System.Action sendRoomList)
+        public MatchService(ServerRoomRepository repo, CardGameController matchControllerPrefab, DeckRulesSO deckRulesSO, Action sendRoomList)
         {
             _repo = repo;
             _matchControllerPrefab = matchControllerPrefab;
+            _deckRulesSO = deckRulesSO;
             _sendRoomList = sendRoomList;
         }
 
@@ -957,7 +985,7 @@ namespace CardClash
 
                 // Build the deck for this match.
                 CardDeck deck = new();
-                deck.BuildDeck();
+                deck.BuildDeck(_deckRulesSO);
 
                 _repo.RoomDecks.Add(roomCode, deck);
 
@@ -998,7 +1026,7 @@ namespace CardClash
                 }
 
                 // Start gameplay after registering every player.
-                matchController.StartGame(deck, roomInfo.startingCards);
+                matchController.StartGame(deck, roomInfo.startingCards, roomInfo.allowStacking);
 
                 // Remove all waiting-room mappings.
                 foreach (var playerConn in players)
