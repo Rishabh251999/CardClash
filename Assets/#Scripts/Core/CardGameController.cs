@@ -158,12 +158,15 @@ namespace CardClash
 
         private bool _matchEnded;
         private bool _allowStacking = true;
+        private bool _noPowerCardFinish;
+        private bool _playSameNumber;
         private bool _isGameRunningLocally;
         private bool _isTimerRunningLocally;
         private bool _awaitingDrawnCardDecision;
         private bool HasPendingDraw => _pendingDraw.Count > 0;
 
         private int _lastDisplayedGameSecond = -1;
+        private int _maxCardsPerTurn = 1;
 
         #endregion
 
@@ -653,12 +656,17 @@ namespace CardClash
         #region Server - Game Setup
 
         [Server]
-        public void StartGame(CardDeck deck, int cardsPerPlayer, bool allowStacking)
+        public void StartGame(CardDeck deck, int cardsPerPlayer, bool allowStacking, bool noPowerCardFinish, bool playSameNumber, int maxCardsPerTurn)
         {
+            Debug.Log($"[Server] StartGame — noPowerCardFinish = {noPowerCardFinish}");
+
             _deck = deck;
 
             _cardPerPlayer = cardsPerPlayer;
             _allowStacking = allowStacking;
+            _noPowerCardFinish = noPowerCardFinish;
+            _playSameNumber = playSameNumber;
+            _maxCardsPerTurn = maxCardsPerTurn; 
 
             _pendingDraw = default;
 
@@ -897,16 +905,28 @@ namespace CardClash
         [Server]
         public void HandlePlayerCard(NetworkConnectionToClient conn, GameCard card, CardColor chosenWildColor)
         {
+            Debug.Log($"[Server] HandlePlayerCard called: card={card}, conn={conn?.identity?.netId}");
+
             if (_matchEnded)
+            {
+                Debug.Log("[Server] Rejected: match already ended.");
                 return;
+            }
 
             if (!IsValidPlayerAction(conn))
+            {
+                Debug.Log("[Server] Rejected: not a valid player action (not your turn or invalid conn).");
                 return;
+            }
 
             var netId = conn.identity.netId;
 
             if (!IsPlayableAgainstTop(card))
             {
+                Debug.Log($"[Server] Rejected: {card} not playable against top " +
+                    $"(pendingDrawCount={_pendingDraw.Count}, pendingDrawType={_pendingDraw.Type}, " +
+                    $"topDiscard={_deck.TopDiscard})");
+
                 Debug.LogWarning($"[Server] Rejected illegal play " + $"from netId {netId}: {card}");
 
                 conn.Send(new ClientDeckMessage
@@ -914,6 +934,26 @@ namespace CardClash
                     clientDeckOperation = ClientDeckOperation.Error,
 
                     errorMessage = $"Illegal play: {card} does not match " + $"the current discard/stack requirement."
+                });
+
+                return;
+            }
+
+            if (_playerData[netId].cardCount == 1)
+            {
+                Debug.Log($"[Server] Checking finish rule: noPowerCardFinish={_noPowerCardFinish}, " +
+                    $"cardCount={_playerData[netId].cardCount}, cardType={card.Type}, isPower={IsPowerCard(card.Type)}");
+            }
+
+            if (_noPowerCardFinish && _playerData[netId].cardCount == 1 && IsPowerCard(card.Type))
+            {
+                Debug.LogWarning($"[Server] Rejected finishing play " + $"from netId {netId}: {card} cannot be the last card.");
+
+                conn.Send(new ClientDeckMessage
+                {
+                    clientDeckOperation = ClientDeckOperation.Error,
+
+                    errorMessage = "House Rule: You cannot finish " + "the game with a Wild card."
                 });
 
                 return;
@@ -1039,6 +1079,58 @@ namespace CardClash
         }
 
         [Server]
+        public void HandlePlayerCards(NetworkConnectionToClient conn, GameCard[] cards, CardColor chosenWildColor)
+        {
+            if (!_playSameNumber || cards == null || cards.Length == 0)
+                return;
+
+            if (_matchEnded || !IsValidPlayerAction(conn))
+                return;
+
+            // House rule validation: all cards must share the same number, and the
+            // first card must be legally playable against the current top/stack.
+            if (cards.Length > _maxCardsPerTurn)
+            {
+                conn.Send(new ClientDeckMessage
+                {
+                    clientDeckOperation = ClientDeckOperation.Error,
+                    errorMessage = $"House Rule: You can only play up to {_maxCardsPerTurn} cards at once."
+                });
+                return;
+            }
+
+            var firstCard = cards[0];
+
+            if (firstCard.Type != CardType.Number ||
+                cards.Any(c => c.Type != CardType.Number || c.FaceValue != firstCard.FaceValue))
+            {
+                conn.Send(new ClientDeckMessage
+                {
+                    clientDeckOperation = ClientDeckOperation.Error,
+                    errorMessage = "House Rule: All stacked cards must be the same number."
+                });
+                return;
+            }
+
+            if (!IsPlayableAgainstTop(firstCard))
+            {
+                conn.Send(new ClientDeckMessage
+                {
+                    clientDeckOperation = ClientDeckOperation.Error,
+                    errorMessage = $"Illegal play: {firstCard} does not match the current discard requirement."
+                });
+                return;
+            }
+
+            var netId = conn.identity.netId;
+
+            // Play each card sequentially through the existing single-card pipeline,
+            // so all effects (Skip/Reverse/DrawTwo/Wild color, win/last-card checks) apply.
+            foreach (var card in cards)
+                HandlePlayerCard(conn, card, chosenWildColor);
+        }
+
+        [Server]
         private IEnumerator InvokeAfterDelay(float delay, Action action)
         {
             yield return new WaitForSeconds(delay);
@@ -1143,10 +1235,14 @@ namespace CardClash
         {
             Debug.Log($"[Server] netId {netId} failed to call LAST CARD. Applying penalty draw.");
 
-            ForcePlayerDraw(netId, _gameRules.MissedLastCardPenalty);
+            ForcePlayerDraw(netId, _gameRules.MissedLastCardPenalty, true);
 
             ResetLastCardCall(netId);
         }
+
+        [Server]
+        private bool IsPowerCard(CardType type) =>
+            type is CardType.Wild or CardType.WildDrawFour;
 
         #endregion
 
@@ -1568,7 +1664,8 @@ namespace CardClash
             var deck = new CardDeck();
             deck.BuildDeck(_deckRules);
 
-            StartGame(deck, _cardPerPlayer, _allowStacking);
+            StartGame(deck, _cardPerPlayer, _allowStacking, 
+                _noPowerCardFinish, _playSameNumber, _maxCardsPerTurn);
         }
 
         #endregion

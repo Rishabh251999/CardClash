@@ -231,7 +231,7 @@ namespace CardClash
 
         private void OnBackButtonClick()
         {
-            _uiManager.SetState(ScreenType.Lobby, true);
+            _uiManager.SetState(ScreenType.Lobby, false);
         }
 
         private void OnSaveButtonClick()

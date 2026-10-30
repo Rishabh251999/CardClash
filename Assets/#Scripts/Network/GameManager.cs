@@ -232,7 +232,7 @@ namespace CardClash
             {
                 case ServerRoomOperation.Create:
                     _roomService.CreateRoom(
-                        conn, msg.maxPlayers, msg.startingCards, msg.allowStacking);
+                        conn, msg.maxPlayers, msg.startingCards, msg.allowStacking, msg.noPowerCardFinish, msg.maxCardsPerTurn);
                     break;
 
                 case ServerRoomOperation.Join:
@@ -314,6 +314,10 @@ namespace CardClash
                 case ServerDeckOperation.CallLastCard:
                     controller.HandleLastCardCall(conn);
                     break;
+
+                case ServerDeckOperation.PlayMultipleCards:
+                    controller.HandlePlayerCards(conn, msg.Cards, msg.chosenWildColor);
+                    break;
             }
         }
 
@@ -361,7 +365,7 @@ namespace CardClash
                     break;
 
                 case ClientRoomOperation.Started:
-                    _uiManager.SetState(ScreenType.Game, true);
+                    _uiManager.SetState(ScreenType.Game, false);
                     break;
 
                 case ClientRoomOperation.MatchEndedByOwner:
@@ -451,7 +455,7 @@ namespace CardClash
         {
             _clientRepo.SetRoom(roomId, true);
 
-            _uiManager.SetState(ScreenType.Room, true);
+            _uiManager.SetState(ScreenType.Room, false);
         }
 
         [ClientCallback]
@@ -460,7 +464,7 @@ namespace CardClash
             _clientRepo.SetRoom(roomId, false);
             _clientRepo.ClearSelectedRoom();
 
-            _uiManager.SetState(ScreenType.Room, true);
+            _uiManager.SetState(ScreenType.Room, false);
         }
 
 
@@ -478,7 +482,7 @@ namespace CardClash
 
             _clientRepo.ClearRoom();
 
-            _uiManager.SetState(ScreenType.Lobby, true);
+            _uiManager.SetState(ScreenType.Lobby, false);
 
             _lobbyManager.UpdateRoomList(_clientRepo.OpenRooms);
 

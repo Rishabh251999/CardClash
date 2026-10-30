@@ -1,5 +1,6 @@
 using Mirror;
 using System;
+using DG.Tweening;
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
@@ -130,6 +131,7 @@ namespace CardClash
         {
             if (!_pendingPlay || _played) return;
             StopAllCoroutines();
+            _rectTransform.DOKill();
             StartCoroutine(SettleBackToHand());
         }
 
@@ -413,6 +415,7 @@ namespace CardClash
             _pendingPlay = false;
             _isDragging = false;
             StopAllCoroutines();
+            _rectTransform.DOKill();
 
             if (_placeholder != null)
             {
@@ -433,59 +436,45 @@ namespace CardClash
 
             _rectTransform.sizeDelta = new Vector2(150f, 217f);
 
-            StartCoroutine(MoveToTarget(target));
+            MoveToTarget(target);
         }
 
-        private IEnumerator MoveToTarget(Transform target)
+        private void MoveToTarget(Transform target)
         {
-            var startWorldPosition = _rectTransform.position;
             var targetWorldPosition = target.position;
-
             float duration = CardGameController.Instance.PlayMoveDuration;
-            float elapsed = 0f;
 
-            float startRotZ = _rectTransform.localEulerAngles.z;
+            var startRotZ = _rectTransform.localEulerAngles.z;
             if (startRotZ > 180f) startRotZ -= 360f;       // shortest way back to 0
 
-            while (elapsed < duration)
+            _rectTransform.localRotation = Quaternion.Euler(0f, 0f, startRotZ);
+
+            var sequence = DOTween.Sequence().SetUpdate(true);
+
+            sequence.Join(_rectTransform.DOMove(targetWorldPosition, duration).SetEase(Ease.OutBack));
+            sequence.Join(_rectTransform.DOLocalRotate(Vector3.zero, duration).SetEase(Ease.Linear));
+
+            sequence.OnComplete(() =>
             {
-                elapsed += Time.unscaledDeltaTime;
-
-                var t = Mathf.Clamp01(elapsed / duration);
-                var eased = EaseOutBack(t);
-
-                _rectTransform.position = Vector3.LerpUnclamped(startWorldPosition, targetWorldPosition, eased);
-                _rectTransform.localRotation = Quaternion.Euler(0f, 0f, Mathf.LerpUnclamped(startRotZ, 0f, t));
-
-                yield return null;
-            }
-
-            _rectTransform.position = targetWorldPosition;
-
-            yield return StartCoroutine(SquashAndSettle());
-
-            Destroy(gameObject);
+                _rectTransform.position = targetWorldPosition;
+                SquashAndSettle(() => Destroy(gameObject));
+            });
         }
 
-        private IEnumerator SquashAndSettle()
+        private void SquashAndSettle(Action onComplete)
         {
             var randomTilt = UnityEngine.Random.Range(-15f, 15f);
             var squash = new Vector3(1.15f, 0.85f, 1f);
-            var normal = Vector3.one;
 
-            float elapsed = 0f;
-            while (elapsed < SquashDuration)
-            {
-                elapsed += Time.unscaledDeltaTime;
-                float t = Mathf.Clamp01(elapsed / SquashDuration);
+            _rectTransform.localScale = squash;
 
-                _rectTransform.localScale = Vector3.Lerp(squash, normal, t);
-
-                yield return null;
-            }
-
-            _rectTransform.localScale = normal;
-            _rectTransform.localRotation = Quaternion.Euler(0f, 0f, randomTilt);
+            _rectTransform.DOScale(Vector3.one, SquashDuration)
+                .SetUpdate(true)
+                .OnComplete(() =>
+                {
+                    _rectTransform.localRotation = Quaternion.Euler(0f, 0f, randomTilt);
+                    onComplete?.Invoke();
+                });
         }
 
         public IEnumerator SettleInDropZone(Transform target)
@@ -493,28 +482,18 @@ namespace CardClash
             if (_played || target == null)
                 yield break;
 
-            var start = _rectTransform.position;
-            var startRot = _rectTransform.localRotation;
-
             float duration = CardGameController.Instance != null
                 ? CardGameController.Instance.PlayMoveDuration
                 : SettleDuration;
 
-            float elapsed = 0f;
+            _rectTransform.DOKill();
 
-            while (elapsed < duration)
-            {
-                if (_played) yield break;
+            var sequence = DOTween.Sequence().SetUpdate(true);
 
-                elapsed += Time.unscaledDeltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
-                float eased = EaseOutBack(t);
+            sequence.Join(_rectTransform.DOMove(target.position, duration).SetEase(Ease.OutBack));
+            sequence.Join(_rectTransform.DOLocalRotateQuaternion(Quaternion.identity, duration).SetEase(Ease.Linear));
 
-                _rectTransform.position = Vector3.LerpUnclamped(start, target.position, eased);
-                _rectTransform.localRotation = Quaternion.Slerp(startRot, Quaternion.identity, t);
-
-                yield return null;
-            }
+            yield return sequence.WaitForCompletion();
 
             if (_played) yield break;
 
@@ -542,34 +521,31 @@ namespace CardClash
 
         public void AnimateDeal()
         {
-            StartCoroutine(MoveFromOrigin(_dealTargetLocalPos, transform.parent));
+            MoveFromOrigin(_dealTargetLocalPos, transform.parent);
         }
 
-        private IEnumerator MoveFromOrigin(Vector3 targetLocalPos, Transform parent)
+        private void MoveFromOrigin(Vector3 targetLocalPos, Transform parent)
         {
-            Vector3 startPos = transform.position;
-            Vector3 targetWorldPos = parent.TransformPoint(targetLocalPos);
+            var targetWorldPos = parent.TransformPoint(targetLocalPos);
             float duration = CardGameController.Instance.PlayMoveDuration;
 
-            float startSpin = UnityEngine.Random.Range(180f, 360f) * (UnityEngine.Random.value < 0.5f ? -1f : 1f);
+            var startSpin = UnityEngine.Random.Range(180f, 360f) * (UnityEngine.Random.value < 0.5f ? -1f : 1f);
 
-            float elapsed = 0f;
-            while (elapsed < duration)
+            _rectTransform.localRotation = Quaternion.Euler(0f, 0f, startSpin);
+            _rectTransform.DOKill();
+
+            var sequence = DOTween.Sequence().SetUpdate(true);
+
+            sequence.Join(transform.DOMove(targetWorldPos, duration).SetEase(Ease.OutBack));
+            sequence.Join(_rectTransform.DOLocalRotate(Vector3.zero, duration).SetEase(Ease.Linear));
+
+            sequence.OnComplete(() =>
             {
-                elapsed += Time.unscaledDeltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
-                float eased = EaseOutBack(t);
-
-                transform.position = Vector3.LerpUnclamped(startPos, targetWorldPos, eased);
-                _rectTransform.localRotation = Quaternion.Euler(0f, 0f, Mathf.LerpUnclamped(startSpin, 0f, t));
-
-                yield return null;
-            }
-
-            transform.localPosition = targetLocalPos;
-            _rectTransform.localRotation = Quaternion.identity;
-            _layoutElement.ignoreLayout = false;
-            _button.interactable = true;
+                transform.localPosition = targetLocalPos;
+                _rectTransform.localRotation = Quaternion.identity;
+                _layoutElement.ignoreLayout = false;
+                _button.interactable = true;
+            });
         }
 
         #endregion

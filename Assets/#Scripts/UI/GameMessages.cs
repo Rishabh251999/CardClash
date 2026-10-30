@@ -25,6 +25,10 @@ namespace CardClash
         public int startingCards;
 
         public bool allowStacking;
+        public bool noPowerCardFinish;
+        public bool playSameNumber;
+
+        public int maxCardsPerTurn;
     }
 
     public struct ServerDeckMessage : NetworkMessage
@@ -33,6 +37,8 @@ namespace CardClash
         public Guid RoomCode;
         public GameCard Card;
         public CardColor chosenWildColor;
+
+        public GameCard[] Cards;
     }
 
     /// <summary>
@@ -68,7 +74,6 @@ namespace CardClash
     [Serializable]
     public struct RoomInfo
     {
-        [NonSerialized]
         public Guid roomCode;
 
         public int playerCount;
@@ -77,6 +82,10 @@ namespace CardClash
 
         public bool isStarted;
         public bool allowStacking;
+        public bool noPowerCardFinish;
+        public bool playSameNumber;
+
+        public int maxCardsPerTurn;
     }
 
     /// <summary>
@@ -92,7 +101,6 @@ namespace CardClash
         public bool isReady;
         public bool isOwner;
 
-        [NonSerialized]
         public Guid roomCode;
 
         public string playerName;
@@ -143,6 +151,7 @@ namespace CardClash
         PassTurn = 3,
         QuitMatch = 4,
         CallLastCard = 5,
+        PlayMultipleCards = 6,
     }
 
     /// <summary>
@@ -325,6 +334,7 @@ namespace CardClash
         Settings,
         Loading,
         RoomInfo,
+        HouseRules,
         ConnectionError,
     }
 
@@ -335,6 +345,14 @@ namespace CardClash
         Green,
         Yellow,
         LastCard
+    }
+
+    public enum HouseRulePreset
+    {
+        Classic,
+        Fast,
+        Chaos,
+        Custom
     }
 
     #endregion
@@ -587,7 +605,8 @@ namespace CardClash
 
         #region Create Room
 
-        internal void CreateRoom(NetworkConnectionToClient conn, int maxPlayers, int startingCards, bool allowStacking)
+        internal void CreateRoom(NetworkConnectionToClient conn, int maxPlayers, int startingCards, bool allowStacking, 
+            bool noPowerCardFinish, int maxCardsPerTurn)
         {
             if (conn == null ||
                 !_repo.PlayerInfos.TryGetValue(conn, out var playerInfo))
@@ -617,7 +636,9 @@ namespace CardClash
                 startingCards = startingCards,
                 playerCount = 1,
                 isStarted = false,
-                allowStacking = allowStacking
+                allowStacking = allowStacking,
+                noPowerCardFinish = noPowerCardFinish,
+                maxCardsPerTurn = maxCardsPerTurn
             });
 
             playerInfo.isReady = false;
@@ -1026,7 +1047,8 @@ namespace CardClash
                 }
 
                 // Start gameplay after registering every player.
-                matchController.StartGame(deck, roomInfo.startingCards, roomInfo.allowStacking);
+                matchController.StartGame(deck, roomInfo.startingCards, roomInfo.allowStacking, 
+                    roomInfo.noPowerCardFinish, roomInfo.playSameNumber, roomInfo.maxCardsPerTurn);
 
                 // Remove all waiting-room mappings.
                 foreach (var playerConn in players)

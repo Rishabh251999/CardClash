@@ -1,8 +1,10 @@
+using DG.Tweening;
 using Mirror;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using static UnityEngine.CullingGroup;
 
 namespace CardClash
 {
@@ -40,6 +42,8 @@ namespace CardClash
 
         private ClientRoomRepository _clientRoomRepository;
 
+        private ScreenType _previousState;
+
         #endregion
 
         #region Unity Lifecycle 
@@ -50,12 +54,18 @@ namespace CardClash
         {
             _createButton.AddListenerSafe(RequestCreateRoom);
             _settingsButton.AddListenerSafe(OnSettingsButtonClick);
+
+            if (_uiManager is { })
+                _uiManager.OnStateChanged += OnStateChanged;
         }
 
         private void OnDestroy()
         {
             _createButton.RemoveListenerSafe(RequestCreateRoom);
             _settingsButton.RemoveListenerSafe(OnSettingsButtonClick);
+
+            if (_uiManager is { })
+                _uiManager.OnStateChanged -= OnStateChanged;
         }
 
         #endregion
@@ -70,6 +80,8 @@ namespace CardClash
 
             foreach (var roomInfo in openRooms.Values)
             {
+                Debug.Log($"Room: {roomInfo.roomCode} | Players: {roomInfo.playerCount}/{roomInfo.maxPlayers}");
+
                 var roomUIElement = Instantiate(_roomPrefab, _matchList.transform);
                 roomUIElement.transform.SetParent(_matchList.transform, false);
 
@@ -84,12 +96,14 @@ namespace CardClash
         [ClientCallback]
         private void RequestCreateRoom()
         {
-            _uiManager.SetState(ScreenType.RoomInfo, true);
+            _uiManager.SetState(ScreenType.RoomInfo, false);
         }
 
         private void OnSettingsButtonClick()
         {
-            _uiManager.SetState(ScreenType.Settings, true);
+            SettingsIconRotation();
+
+            _uiManager.SetState(ScreenType.Settings, false);
         }
 
 
@@ -107,6 +121,23 @@ namespace CardClash
                 serverRoomOperation = ServerRoomOperation.Join,
                 roomCode = _clientRoomRepository.SelectedRoom
             });
+        }
+
+        private void SettingsIconRotation()
+        {
+            var transform = _settingsButton.transform.eulerAngles;
+
+            _settingsButton.transform.DORotate(
+                new Vector3(transform.x, transform.y, transform.z - 360f),
+                0.25f, RotateMode.FastBeyond360).SetEase(Ease.InOutSine);
+        }
+
+        private void OnStateChanged(ScreenType state)
+        {
+            if (state is ScreenType.Lobby && _previousState is ScreenType.Settings)
+                SettingsIconRotation();
+
+            _previousState = state;
         }
 
         #endregion

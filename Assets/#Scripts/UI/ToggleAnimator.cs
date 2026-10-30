@@ -1,5 +1,5 @@
 using System;
-using System.Collections;
+using DG.Tweening;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -9,7 +9,6 @@ namespace CardClash
     /// Controls only the squash animation and sprite swap of a toggle's visual
     /// (no SFX / status text logic). Reusable across different UI screens.
     /// </summary>
-    [Serializable]
     public class ToggleAnimator
     {
         [Header("Runtime Settings")]
@@ -21,17 +20,15 @@ namespace CardClash
         [SerializeField, Range(0.1f, 1f)]
         private float _toggleSquashScale = 0.85f;
 
-        private readonly MonoBehaviour _owner;
         private readonly Toggle _toggle;
         private readonly Sprite _onSprite;
         private readonly Sprite _offSprite;
 
         private Vector3 _originalScale;
-        private Coroutine _animation;
+        private Sequence _animation;
 
         public ToggleAnimator(MonoBehaviour owner, Toggle toggle, Sprite onSprite, Sprite offSprite)
         {
-            _owner = owner;
             _toggle = toggle;
             _onSprite = onSprite;
             _offSprite = offSprite;
@@ -51,18 +48,25 @@ namespace CardClash
             if (_toggleAnimDuration <= 0f)
             {
                 SetVisualInstant();
+                return;
             }
-            else
-            {
-                _animation = _owner.StartCoroutine(AnimateToggle());
-            }
+
+            var rect = _toggle.image.rectTransform;
+            var squashedScale = _originalScale * _toggleSquashScale;
+            var halfDuration = _toggleAnimDuration * 0.5f;
+
+            _animation = DOTween.Sequence()
+                .Append(rect.DOScale(squashedScale, halfDuration))
+                .AppendCallback(() => _toggle.image.sprite = _toggle.isOn ? _onSprite : _offSprite)
+                .Append(rect.DOScale(_originalScale, halfDuration))
+                .OnComplete(() => _animation = null);
         }
 
         public void StopAnimation()
         {
             if (_animation != null)
             {
-                _owner.StopCoroutine(_animation);
+                _animation.Kill();
                 _animation = null;
             }
 
@@ -70,44 +74,6 @@ namespace CardClash
             {
                 _toggle.image.rectTransform.localScale = _originalScale;
             }
-        }
-
-        private IEnumerator AnimateToggle()
-        {
-            var rect = _toggle.image.rectTransform;
-
-            var squashedScale = _originalScale * _toggleSquashScale;
-
-            var halfDuration = _toggleAnimDuration * 0.5f;
-            var elapsed = 0f;
-
-            while (elapsed < halfDuration)
-            {
-                elapsed += Time.deltaTime;
-
-                rect.localScale = Vector3.Lerp(_originalScale, squashedScale, Mathf.Clamp01(elapsed / halfDuration));
-
-                yield return null;
-            }
-
-            rect.localScale = squashedScale;
-
-            _toggle.image.sprite = _toggle.isOn ? _onSprite : _offSprite;
-
-            elapsed = 0f;
-
-            while (elapsed < halfDuration)
-            {
-                elapsed += Time.deltaTime;
-
-                rect.localScale = Vector3.Lerp(squashedScale, _originalScale, Mathf.Clamp01(elapsed / halfDuration));
-
-                yield return null;
-            }
-
-            rect.localScale = _originalScale;
-
-            _animation = null;
         }
     }
 }

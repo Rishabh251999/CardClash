@@ -41,12 +41,12 @@ namespace CardClash
 
             if (hasSavedUserName)
             {
-                SetState(ScreenType.Loading, true);
+                SetState(ScreenType.Loading, false);
             }
 
             else
             {
-                SetState(ScreenType.Login, true);
+                SetState(ScreenType.Login, false);
             }
         }
 
