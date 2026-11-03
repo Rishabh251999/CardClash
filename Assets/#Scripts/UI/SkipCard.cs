@@ -14,7 +14,7 @@ namespace CardClash
     /// Call Play(tint) when a Reverse card is played.
     /// </summary>
     [RequireComponent(typeof(Image))]
-    public class SpriteFlipbook : MonoBehaviour
+    public class SkipCard : MonoBehaviour
     {
         [SerializeField] private Sprite[] _frames;
         [SerializeField] private CanvasGroup _canvasGroup;

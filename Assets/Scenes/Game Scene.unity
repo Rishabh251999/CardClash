@@ -2718,7 +2718,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &344116665
 RectTransform:
   m_ObjectHideFlags: 0
@@ -14137,7 +14137,7 @@ MonoBehaviour:
   onlineScene: Assets/Scenes/Game Scene.unity
   offlineSceneLoadDelay: 0
   transport: {fileID: 1728180429}
-  networkAddress: localhost
+  networkAddress: 192.168.11.177
   maxConnections: 100
   disconnectInactiveConnections: 0
   disconnectInactiveTimeout: 60

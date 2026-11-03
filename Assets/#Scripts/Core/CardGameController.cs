@@ -38,9 +38,9 @@ namespace CardClash
         [SerializeField] private Card _cardPrefab;
         [SerializeField] private DeckRulesSO _deckRules;
         [SerializeField] private GameRulesSO _gameRules;
-        [SerializeField] private SpriteFlipbook _skipFlipbook;
+        [SerializeField] private SkipCard _skipFlipbook;
         [SerializeField] private GamePlayerGUI _playerGUIPrefab;
-        [SerializeField] private SpriteFlipbook _reverseFlipbook;
+        [SerializeField] private ReverseCard _reverseFlipbook;
         [SerializeField] private NotificationView _notificationView;
         [SerializeField] private CardGameEndManager _gameEndManager;
         [SerializeField] private GameButtonManager _gameButtonManager;
@@ -127,6 +127,8 @@ namespace CardClash
         #region Runtime Collections
         private readonly List<Card> _handCards = new();
 
+        private readonly SyncList<uint> _playerOrder = new();
+
         private readonly List<GamePlayerGUI> _playerGUIs = new();
 
         private readonly HashSet<uint> _playersWhoDrewThisTurn = new();
@@ -157,7 +159,6 @@ namespace CardClash
         private Coroutine _notificationHideCoroutine;
 
         private bool _matchEnded;
-        private bool _allowStacking = true;
         private bool _noPowerCardFinish;
         private bool _playSameNumber;
         private bool _isGameRunningLocally;
@@ -188,6 +189,9 @@ namespace CardClash
 
         [SyncVar(hook = nameof(OnGameStartTimeChanged))]
         private double _gameStartTime;
+
+        [SyncVar]
+        private bool _allowStacking = true;
 
 
         #endregion
@@ -554,6 +558,8 @@ namespace CardClash
                 isOwner = info.isOwner,
                 avatarId = info.avatarId,
             };
+
+            _playerOrder.Add(netId);
         }
 
         [Server]
@@ -612,6 +618,8 @@ namespace CardClash
                 EndMatch();
                 return;
             }
+
+            _playerOrder.Remove(netId);
         }
 
         [Server]
@@ -789,6 +797,9 @@ namespace CardClash
         {
             if (!HasPendingDraw)
                 return true;
+
+            if (!_allowStacking)
+                return false;
 
             foreach (var card in _playerRegistry.GetHand(netId))
             {
@@ -1013,8 +1024,6 @@ namespace CardClash
 
             SetTopDiscard(card, _deck.DrawPileCount);
 
-            RpcPlayDiscardEffect(card, _turnState.TurnDirection);
-
             var data = _playerData[netId];
 
             data.cardCount -= 1;
@@ -1061,21 +1070,10 @@ namespace CardClash
                 }
             }
 
-            if (card.Type is CardType.Reverse && _reverseFlipbook != null)
-            {
-                StartCoroutine(InvokeAfterDelay(_reverseFlipbook.Duration, () =>
-                {
-                    if (_matchEnded)
-                        return;
+            if (!_matchEnded)
+                _cardEffects.Resolve(card.Type).Apply(this);
 
-                    _cardEffects.Resolve(card.Type).Apply(this);
-                }));
-            }
-            else
-            {
-                if (!_matchEnded)
-                    _cardEffects.Resolve(card.Type).Apply(this);
-            }
+            RpcPlayDiscardEffect(card, _turnState.TurnDirection);
         }
 
         [Server]
@@ -1916,6 +1914,8 @@ namespace CardClash
             }
 
             _drawPileCountText.text = $"{drawCount} left";
+
+            _reverseFlipbook.StartRotating(ToUnityColor(card.Color));
         }
 
         [ClientRpc]
@@ -1927,7 +1927,7 @@ namespace CardClash
             if (card.Type is CardType.Reverse && _reverseFlipbook is { })
             {
                 _reverseFlipbook.SetDirection(turnDirection);
-                _reverseFlipbook.Play(ToUnityColor(card.Color));
+
                 AudioManager.Instance.PlaySoundEffect("reverse");
                 VibrationUtility.Vibrate(milliseconds: 250, amplitude: 255);
             }
@@ -2067,6 +2067,10 @@ namespace CardClash
                 if (_playerData.TryGetValue(netId, out var currentData))
                     playerGUI.UpdateCardCount(currentData.cardCount);
 
+                var seatIndex = _playerOrder.IndexOf(netId);
+                if (seatIndex >= 0)
+                    playerGUI.transform.SetSiblingIndex(seatIndex);
+
                 return;
             }
 
@@ -2134,7 +2138,7 @@ namespace CardClash
         private bool IsValidPlay(GameCard card)
         {
             if (_pendingDraw.Count > 0)
-                return card.Type == _pendingDraw.Type;
+                return _allowStacking && card.Type == _pendingDraw.Type;
 
             if (card.Type is CardType.Wild || card.Type is CardType.WildDrawFour)
                 return true;

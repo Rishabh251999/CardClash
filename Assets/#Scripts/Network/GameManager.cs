@@ -314,10 +314,6 @@ namespace CardClash
                 case ServerDeckOperation.CallLastCard:
                     controller.HandleLastCardCall(conn);
                     break;
-
-                case ServerDeckOperation.PlayMultipleCards:
-                    controller.HandlePlayerCards(conn, msg.Cards, msg.chosenWildColor);
-                    break;
             }
         }
 

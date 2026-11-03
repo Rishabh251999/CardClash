@@ -8,7 +8,7 @@ namespace CardClash
     {
         #region Scripts References
 
-        [SerializeField] private SpriteFlipbook _skipFlipbook;
+        [SerializeField] private SkipCard _skipFlipbook;
 
         #endregion
 
