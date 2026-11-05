@@ -11,11 +11,6 @@ namespace CardClash
         private const int MinUserNameLength = 3;
         private const int MaxUserNameLength = 16;
 
-        private const string UserNameKey = "UserName";
-        private const string MusicKey = "Music";
-        private const string SoundKey = "Sound";
-        private const string VibrationKey = "Vibration";
-
         private const string OnLabel = "ON";
         private const string OffLabel = "OFF";
 
@@ -32,6 +27,7 @@ namespace CardClash
 
         [Header("References")]
         [SerializeField] private UIManager _uiManager;
+        [SerializeField] private SettingsSO _userSettings;
 
         [SerializeField] private ToggleData _musicToggle;
         [SerializeField] private ToggleData _soundToggle;
@@ -135,19 +131,14 @@ namespace CardClash
 
         private void LoadSettings()
         {
-            var username =  PlayerPrefs.GetString(UserNameKey, string.Empty);
+            _userSettings.Load();
 
-
-            var musicEnabled = PlayerPrefs.GetInt(MusicKey, 1) == 1;
-            var soundEnabled = PlayerPrefs.GetInt(SoundKey, 1) == 1;
-            var vibrationEnabled = PlayerPrefs.GetInt(VibrationKey, 1) == 1;
-
-            _usernameInputField.SetTextWithoutNotify(username);
+            _usernameInputField.SetTextWithoutNotify(_userSettings.UserName);
             _usernameInputField.interactable = false;
 
-            _musicToggle.toggle.SetIsOnWithoutNotify(musicEnabled);
-            _soundToggle.toggle.SetIsOnWithoutNotify(soundEnabled);
-            _vibrationToggle.toggle.SetIsOnWithoutNotify(vibrationEnabled);
+            _musicToggle.toggle.SetIsOnWithoutNotify(_userSettings.MusicEnabled);
+            _soundToggle.toggle.SetIsOnWithoutNotify(_userSettings.SoundEnabled);
+            _vibrationToggle.toggle.SetIsOnWithoutNotify(_userSettings.VibrationEnabled);
 
             SetToggleVisualInstant(_musicToggle);
             SetToggleVisualInstant(_soundToggle);
@@ -250,13 +241,12 @@ namespace CardClash
             _usernameInputField.SetTextWithoutNotify(username);
             _usernameInputField.interactable = false;
 
-            PlayerPrefs.SetString(UserNameKey, username);
+            _userSettings.UserName = username;
+            _userSettings.MusicEnabled = _musicToggle.toggle.isOn;
+            _userSettings.SoundEnabled = _soundToggle.toggle.isOn;
+            _userSettings.VibrationEnabled = _vibrationToggle.toggle.isOn;
 
-            PlayerPrefs.SetInt(MusicKey,_musicToggle.toggle.isOn ? 1 : 0);
-            PlayerPrefs.SetInt(SoundKey,_soundToggle.toggle.isOn ? 1 : 0);
-            PlayerPrefs.SetInt(VibrationKey, _vibrationToggle.toggle.isOn ? 1 : 0);
-
-            PlayerPrefs.Save();
+            _userSettings.Save();
 
             CacheOriginalValues();
             RefreshSaveButton();

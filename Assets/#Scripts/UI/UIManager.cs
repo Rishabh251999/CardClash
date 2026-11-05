@@ -1,14 +1,24 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 
 namespace CardClash
 {
     public class UIManager : MonoBehaviour
     {
+        #region Script References
+
+        [Header("Script References")]
+        [SerializeField] private SettingsSO _settings;
+
+        #endregion
+
         #region UI References
 
+        [Header("UI References")]
+        [Space(5f)]
         [SerializeField] private List<PanelEntry> _panels;
         [SerializeField] private float _fadeDuration = 0.25f;
         [SerializeField] private float _fadeInDelay = 0.1f;
@@ -37,7 +47,9 @@ namespace CardClash
             if (Application.isBatchMode)
                 return;
 
-            var hasSavedUserName = !string.IsNullOrWhiteSpace(PlayerPrefs.GetString("UserName", string.Empty));
+            _settings.Load();
+
+            var hasSavedUserName = !string.IsNullOrWhiteSpace(_settings.UserName);
 
             if (hasSavedUserName)
             {

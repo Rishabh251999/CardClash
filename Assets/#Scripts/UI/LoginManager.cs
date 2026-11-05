@@ -11,13 +11,12 @@ namespace CardClash
         private const int MinUserNameLength = 3;
         private const int MaxUserNameLength = 16;
 
-        private const string UserNameKey = "UserName";
-
         #endregion
 
         #region Script References
 
         [SerializeField] private UIManager _uiManager;
+        [SerializeField] private SettingsSO _settings;
 
         #endregion
 
@@ -48,7 +47,7 @@ namespace CardClash
 
         private void OnDestroy()
         {
-            _enterButton.AddListenerSafe(OnEnterButtonClicked);
+            _enterButton.RemoveListenerSafe(OnEnterButtonClicked);
             _userNameInputField.AddListenerSafe(OnUserNameChanged);
         }
 
@@ -65,7 +64,8 @@ namespace CardClash
 
             _enterButton.interactable = false;
 
-            PlayerPrefs.SetString(UserNameKey, _pendingUserName);
+            _settings.UserName = _pendingUserName;
+            _settings.Save();
 
             _uiManager.SetState(ScreenType.Loading, false);
         }

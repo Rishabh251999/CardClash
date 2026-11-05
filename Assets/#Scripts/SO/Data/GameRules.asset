@@ -12,6 +12,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2920b2f73dfe6cb4f9bc9e7458e24132, type: 3}
   m_Name: GameRules
   m_EditorClassIdentifier: Assembly-CSharp::CardClash.GameSettingsSO
-  _turnTimeLimit: 15
-  _gameTimeLimit: 300
-  _notificationDisplayDuration: 2
+  MinPlayers: 3
+  MaxPlayers: 7
+  DefaultPlayers: 4
+  MinCards: 3
+  MaxCards: 7
+  DefaultStartingCards: 4
+  TurnTimeLimit: 15
+  GameTimeLimit: 300
+  LastCardCallThreshold: 2
+  MissedLastCardPenalty: 4
+  NotificationDisplayDuration: 2

@@ -4855,6 +4855,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 41868df8b0f5555458fc16d712d16fb3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CardClash.AudioManager
+  _userSettings: {fileID: 11400000, guid: ab806ef00b79b234aa6f2f284dd3309c, type: 2}
   _sfxSource: {fileID: 1352535980}
 --- !u!1 &498273657
 GameObject:
@@ -7867,6 +7868,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CardClash.ProfileManager
   _uiManager: {fileID: 1703332058}
+  _userSettings: {fileID: 11400000, guid: ab806ef00b79b234aa6f2f284dd3309c, type: 2}
   _musicToggle:
     statusText: {fileID: 498273660}
     toggle: {fileID: 416708465}
@@ -13910,6 +13912,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 364aa5e2b95eee947868101a79518a8e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UNO.UIManager
+  _settings: {fileID: 11400000, guid: ab806ef00b79b234aa6f2f284dd3309c, type: 2}
   _panels:
   - ScreenType: 0
     CanvasGroup: {fileID: 944846540}
@@ -15297,6 +15300,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CardClash.LoginManager
   _uiManager: {fileID: 1703332058}
+  _settings: {fileID: 11400000, guid: ab806ef00b79b234aa6f2f284dd3309c, type: 2}
   _enterButton: {fileID: 674310448}
   _userNameInputField: {fileID: 579083484}
 --- !u!1 &1914483235

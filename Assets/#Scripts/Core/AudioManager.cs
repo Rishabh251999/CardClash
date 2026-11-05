@@ -15,6 +15,8 @@ namespace CardClash
 
         public static AudioManager Instance { get; private set; }
 
+        [SerializeField] private SettingsSO _userSettings;
+
         [Header("Sources")]
         [SerializeField] private AudioSource _sfxSource;
 
@@ -47,8 +49,10 @@ namespace CardClash
             _musicSource.playOnAwake = false;
             _musicSource.loop = true;
 
-            SetMusicEnabled(PlayerPrefs.GetInt(MusicKey, 1) == 1);
-            SetSfxEnabled(PlayerPrefs.GetInt(SoundKey, 1) == 1);
+            _userSettings.Load();
+
+            SetMusicEnabled(_userSettings.MusicEnabled);
+            SetSfxEnabled(_userSettings.SoundEnabled);
             PlayTrack("menu_loop");
         }
 
