@@ -1,3 +1,4 @@
+
 using DG.Tweening;
 using UnityEngine;
 using UnityEngine.UI;
@@ -13,10 +14,14 @@ namespace CardClash
 
         #endregion
 
-        #region Runtime References
+        #region Settings
 
         [SerializeField] private float _rotationSpeed = 90f;
         [SerializeField] private float _colorTransitionDuration = 0.35f;
+
+        #endregion
+
+        #region Runtime References
 
         private Image _image;
         private Tween _rotationTween;
@@ -38,29 +43,37 @@ namespace CardClash
             StopRotating();
         }
 
-        /// <summary>
-        /// Starts the looping DOTween-based rotation, applying the given tint.
-        /// </summary>
+        #endregion
+
+        #region Rotation
+
         public void StartRotating(Color tint)
         {
-            if (_canvasGroup != null) _canvasGroup.alpha = 1f;
+            if (_canvasGroup != null)
+                _canvasGroup.alpha = 1f;
 
             SetColor(tint);
+            RestartRotationIfNeeded();
+        }
 
-            // Only (re)create the tween if it isn't already running, so we don't
-            // restart/snap the rotation on every discard.
+        private void RestartRotationIfNeeded()
+        {
             if (_rotationTween is { active: true })
                 return;
 
-            var duration = 360f / Mathf.Max(1f, _rotationSpeed);
+            float duration = 360f / Mathf.Max(1f, _rotationSpeed);
 
-            _rotationTween = transform.DOLocalRotate(new Vector3(0f, 0f, _clockwise * 360f), duration, RotateMode.FastBeyond360)
-                .SetEase(Ease.Linear).SetLoops(-1, LoopType.Restart).SetUpdate(true);
+            _rotationTween = transform
+                .DOLocalRotate(
+                    new Vector3(0f, 0f, _clockwise * 360f),
+                    duration,
+                    RotateMode.FastBeyond360
+                )
+                .SetEase(Ease.Linear)
+                .SetLoops(-1, LoopType.Incremental)
+                .SetUpdate(true);
         }
 
-        /// <summary>
-        /// Stops the looping rotation.
-        /// </summary>
         public void StopRotating()
         {
             _rotationTween?.Kill();
@@ -69,13 +82,10 @@ namespace CardClash
             _colorTween?.Kill();
             _colorTween = null;
 
-            if (_canvasGroup != null) _canvasGroup.alpha = 0f;
+            if (_canvasGroup != null)
+                _canvasGroup.alpha = 0f;
         }
 
-        /// <summary>
-        /// Sets the rotation direction. True = clockwise, False = counter-clockwise.
-        /// Restarts the tween if currently rotating.
-        /// </summary>
         public void SetDirection(int clockwise)
         {
             clockwise = clockwise >= 0 ? 1 : -1;
@@ -91,17 +101,21 @@ namespace CardClash
             _rotationTween.Kill();
             _rotationTween = null;
 
-            StartRotating(_image.color);
+            RestartRotationIfNeeded();
         }
 
-        /// <summary>
-        /// Sets the image tint color without affecting rotation state.
-        /// </summary>
+        #endregion
+
+        #region Color
+
         public void SetColor(Color tint)
         {
             _colorTween?.Kill();
-            _colorTween = _image.DOColor(tint, _colorTransitionDuration)
-                .SetEase(Ease.OutQuad).SetUpdate(true);
+
+            _colorTween = _image
+                .DOColor(tint, _colorTransitionDuration)
+                .SetEase(Ease.OutQuad)
+                .SetUpdate(true);
         }
 
         #endregion

@@ -6,12 +6,13 @@ using UnityEngine.UI;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine.EventSystems;
+using TMPro;
 
 namespace CardClash
 {
     [RequireComponent(typeof(Image), typeof(Button))]
     [RequireComponent(typeof(LayoutElement))]
-    public class Card : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
+    public class Card : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler, IPointerClickHandler
     {
         #region constants/readonly
 
@@ -51,6 +52,9 @@ namespace CardClash
 
         #region UI References
 
+        [SerializeField] private CanvasGroup _canvasGroup;
+        [SerializeField] private TextMeshProUGUI _cardIndexText;
+
         private Image _cardImage;
         private Button _button;
         private RectTransform _rectTransform;
@@ -68,20 +72,28 @@ namespace CardClash
         // drag state
         private RectTransform _placeholder;      // empty slot that keeps the hand layout unchanged while dragging
         private Transform _handParent;
+
         private Vector3 _dragOffset;
         private Vector3 _dragTargetWorld;
         private Vector3 _lastWorldPos;
+
         private float _tilt;
+        private float _glowAlpha;
 
+        private int _selectedIndex;
+        public int SelectedIndex => _selectedIndex;
+
+        private bool _canMultiSelect;
+
+        private bool _highlightSized;
         private bool _isDragging;
-        private bool _pendingPlay;               // dropped on the table, waiting for the server
-        private bool _played;                    // the server accepted the play
+        private bool _pendingPlay;  
+        private bool _played;         
 
-        // highlight state
+
         public enum HighlightState { Normal, Playable, Disabled }
         private HighlightState _highlightState = HighlightState.Normal;
-        private float _glowAlpha;
-        private bool _highlightSized;
+
 
         #endregion
 
@@ -90,9 +102,13 @@ namespace CardClash
         private void Awake()
         {
             _cardImage = GetComponent<Image>();
+
             _button = GetComponent<Button>();
+
             _rectTransform = (RectTransform)transform;
+
             _layoutElement = GetComponent<LayoutElement>();
+
             _rootCanvas = GetComponentInParent<Canvas>();
 
             // the dimming below changes the card's color itself, so the button's own color tint must not fight it
@@ -168,7 +184,6 @@ namespace CardClash
 
                 float target = playable ? 0.8f + 0.2f * Mathf.Sin(Time.unscaledTime * _pulseSpeed) : 0f;
                 _glowAlpha = Mathf.Lerp(_glowAlpha, target, k);
-                _highlight.enabled = _glowAlpha > 0.01f;
 
                 var c = _highlightColor;
                 c.a = _glowAlpha;
@@ -390,11 +405,42 @@ namespace CardClash
 
         #endregion
 
+        #region Selection Handling
+
+        public void OnPointerClick(PointerEventData eventData)
+        {
+            if (!_button.interactable || _played || _pendingPlay) return;
+            if (CardGameController.Instance is not { PlaySameNumberEnabled: true } gc) return;
+            if (!_canMultiSelect) return;
+
+            gc.ToggleCardSelection(this);
+        }
+
+        public void SetSelectedIndex(int index)
+        {
+            _selectedIndex = index;
+
+            if (_canvasGroup != null)
+                _canvasGroup.alpha = index > 0 ? 1f : 0f;
+
+            if (_cardIndexText != null && index > 0)
+                _cardIndexText.SetText("{0}", index);
+        }
+
+        public void SetMultiSelectable(bool canSelect)
+        {
+            _canMultiSelect = canSelect;
+        }
+
+        #endregion
+
         #region Sprites
 
         public void Setup(GameCard card)
         {
             CardData = card;
+
+            SetSelectedIndex(0);
 
             var sprite = _visualDatabase != null ? _visualDatabase.GetSprite(card) : null;
 
@@ -426,7 +472,13 @@ namespace CardClash
 
             _button.interactable = false;
 
-            if (_highlight != null) _highlight.enabled = false;    // no ring on the card that is being played
+            if (_highlight != null)
+            {
+                var c = _highlight.color;
+                c.a = 0f;
+                _highlight.color = c;
+            }
+
             _cardImage.color = Color.white;
 
             if (target == null)

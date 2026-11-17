@@ -1,4 +1,5 @@
 using System;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -18,9 +19,14 @@ namespace CardClash
         [Header("UI References")]
         [SerializeField] private Button _passButton;
         [SerializeField] private Button _calloutButton;
+        [SerializeField] private Button _playSelectedButton;
+
         [Space(2.5f)]
         [SerializeField] private Image _passButtonIcon;
         [SerializeField] private Image _calloutButtonIcon;
+
+        [Space(2.5f)]
+        [SerializeField] private TextMeshProUGUI _playSelectedCountText;
 
         #endregion
 
@@ -55,6 +61,12 @@ namespace CardClash
             _calloutButtonImage.sprite = isInteractable ? _calloutButtonSprites.EnabledSprite : _calloutButtonSprites.DisabledSprite;
 
             _calloutButtonIcon.sprite = isInteractable ? _calloutButtonSprites.EnabledIconSprite : _calloutButtonSprites.DisabledIconSprite;
+        }
+
+        public void SetPlaySelectedButtonState(int count)
+        {
+            if (_playSelectedCountText != null)
+                _playSelectedCountText.SetText("Play x{0}", count);
         }
 
         #endregion

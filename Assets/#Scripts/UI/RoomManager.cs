@@ -186,7 +186,7 @@ namespace CardClash
             }
 
             _startButton.interactable = everyoneReady && _owner && count == maxPlayers;
-            _playerCountText.SetText("{0} / {1}", count, maxPlayers);
+            _playerCountText.SetText($"{count} / {maxPlayers}");
 
             PlayPlayerCountChangeSound(count);
         }

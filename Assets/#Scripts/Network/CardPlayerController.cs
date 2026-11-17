@@ -37,7 +37,7 @@ namespace CardClash
         {
             yield return card.SettleInDropZone(controller.CardTargetTransform);
 
-            controller.ShowColorPicker(chosenColor => SendPlay(card, chosenColor));
+            controller.ShowColorPicker(chosenColor => SendPlay(card, chosenColor), card);
         }
 
         private void SendPlay(Card card, CardColor chosenColor)

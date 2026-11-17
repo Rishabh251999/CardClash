@@ -69,7 +69,7 @@ namespace CardClash
         internal bool LastCardPowerCardEnabled => _lastCardPowerCardToggle.isOn;
         internal bool PlaySameNumberEnabled => _playSameNumberToggle.isOn;
 
-        internal int MaxCardsPerTurnValue => DefaultCardsPerTurn + _maxCardsPerTurnDropdown.value;
+        internal int MaxCardsPerTurnValue => MinCardsPerTurn + _maxCardsPerTurnDropdown.value;
 
         #endregion
 

@@ -58,6 +58,7 @@ namespace CardClash
         [SerializeField] private Button _pauseButton;
         [SerializeField] private Button _resumeButton;
         [SerializeField] private Button _passTurnButton;
+        [SerializeField] private Button _playSelectedButton;
 
         [SerializeField] private Button _lastCardButton;
         [SerializeField] private Button _redColorButton;
@@ -95,6 +96,7 @@ namespace CardClash
         [SerializeField] private GameObject _countdownPanel;
         [SerializeField] private GameObject _colorPickerPanel;
         [SerializeField] private GameObject _cardDrawGameobject;
+        [SerializeField] private GameObject _handButtonsGameobject;
 
         #endregion
 
@@ -126,6 +128,7 @@ namespace CardClash
 
         #region Runtime Collections
         private readonly List<Card> _handCards = new();
+        private readonly List<Card> _selectedCards = new();
 
         private readonly SyncList<uint> _playerOrder = new();
 
@@ -147,6 +150,8 @@ namespace CardClash
 
         private CardDeck _deck;
 
+        private Card _pendingWildCard;
+
         private readonly CardTurnStateMachine _turnState = new();
         private readonly PlayerHandRegistry _playerRegistry = new();
         private CardEffectResolver _cardEffects;
@@ -160,14 +165,13 @@ namespace CardClash
 
         private bool _matchEnded;
         private bool _noPowerCardFinish;
-        private bool _playSameNumber;
+        public bool PlaySameNumberEnabled => _playSameNumber;
         private bool _isGameRunningLocally;
         private bool _isTimerRunningLocally;
         private bool _awaitingDrawnCardDecision;
         private bool HasPendingDraw => _pendingDraw.Count > 0;
 
         private int _lastDisplayedGameSecond = -1;
-        private int _maxCardsPerTurn = 1;
 
         #endregion
 
@@ -186,12 +190,17 @@ namespace CardClash
 
         [SyncVar(hook = nameof(OnTurnStartTimeChanged))]
         private double _turnStartTime;
-
+        
         [SyncVar(hook = nameof(OnGameStartTimeChanged))]
         private double _gameStartTime;
 
         [SyncVar]
         private bool _allowStacking = true;
+        [SyncVar]
+        private bool _playSameNumber;
+
+        [SyncVar]
+        private int _maxCardsPerTurn = 1;
 
 
         #endregion
@@ -376,20 +385,23 @@ namespace CardClash
             _canvasGroup.interactable = true;
             _canvasGroup.blocksRaycasts = true;
 
-            _quitButton.onClick.AddListener(OnClickQuitButton);
-            _pauseButton.onClick.AddListener(OnPauseButtonClicked);
-            _resumeButton.onClick.AddListener(OnResumeButtonClicked);
+            _handButtonsGameobject.SetActive(false);
 
-            _cardDrawButton.onClick.AddListener(OnDrawButtonClicked);
-            _passTurnButton.onClick.AddListener(OnPassButtonClicked);
-            _lastCardButton.onClick.AddListener(OnLastCardButtonClicked);
+            _quitButton.AddListenerSafe(OnClickQuitButton);
+            _pauseButton.AddListenerSafe(OnPauseButtonClicked);
+            _resumeButton.AddListenerSafe(OnResumeButtonClicked);
+
+            _cardDrawButton.AddListenerSafe(OnDrawButtonClicked);
+            _passTurnButton.AddListenerSafe(OnPassButtonClicked);
+            _lastCardButton.AddListenerSafe(OnLastCardButtonClicked);
+            _playSelectedButton.AddListenerSafe(OnPlaySelectedButtonClicked);
 
             _gameButtonManager.SetPassButtonInteractable(false);
 
-            _redColorButton.onClick.AddListener(OnRedColorClicked);
-            _yellowColorButton.onClick.AddListener(OnYellowColorClicked);
-            _greenColorButton.onClick.AddListener(OnGreenColorClicked);
-            _blueColorButton.onClick.AddListener(OnBlueColorClicked);
+            _redColorButton.AddListenerSafe(OnRedColorClicked);
+            _blueColorButton.AddListenerSafe(OnBlueColorClicked);
+            _greenColorButton.AddListenerSafe(OnGreenColorClicked);
+            _yellowColorButton.AddListenerSafe(OnYellowColorClicked);
 
             SetPanelVisible(_pausePanel, false);
             SetPanelVisible(_countdownPanel, false);
@@ -406,18 +418,19 @@ namespace CardClash
                 _countdownCoroutine = null;
             }
 
-            _cardDrawButton.onClick.RemoveListener(OnDrawButtonClicked);
-            _passTurnButton.onClick.RemoveListener(OnPassButtonClicked);
-            _lastCardButton.onClick.RemoveListener(OnLastCardButtonClicked);
+            _cardDrawButton.RemoveListenerSafe(OnDrawButtonClicked);
+            _passTurnButton.RemoveListenerSafe(OnPassButtonClicked);
+            _lastCardButton.RemoveListenerSafe(OnLastCardButtonClicked);
+            _playSelectedButton.RemoveListenerSafe(OnPlaySelectedButtonClicked);
 
-            _redColorButton.onClick.RemoveListener(OnRedColorClicked);
-            _yellowColorButton.onClick.RemoveListener(OnYellowColorClicked);
-            _greenColorButton.onClick.RemoveListener(OnGreenColorClicked);
-            _blueColorButton.onClick.RemoveListener(OnBlueColorClicked);
+            _redColorButton.RemoveListenerSafe(OnRedColorClicked);
+            _yellowColorButton.RemoveListenerSafe(OnYellowColorClicked);
+            _greenColorButton.RemoveListenerSafe(OnGreenColorClicked);
+            _blueColorButton.RemoveListenerSafe(OnBlueColorClicked);
 
-            _quitButton.onClick.RemoveListener(OnClickQuitButton);
-            _pauseButton.onClick.RemoveListener(OnPauseButtonClicked);
-            _resumeButton.onClick.RemoveListener(OnResumeButtonClicked);
+            _quitButton.RemoveListenerSafe(OnClickQuitButton);
+            _pauseButton.RemoveListenerSafe(OnPauseButtonClicked);
+            _resumeButton.RemoveListenerSafe(OnResumeButtonClicked);
 
             Instance = null;
         }
@@ -505,9 +518,10 @@ namespace CardClash
         #region Client Input - Wild Color
 
         [Client]
-        public void ShowColorPicker(Action<CardColor> onColorChosen)
+        public void ShowColorPicker(Action<CardColor> onColorChosen, Card pendingCard)
         {
             _onColorChosen = onColorChosen;
+            _pendingWildCard = pendingCard;
 
             SetPanelVisible(_colorPickerPanel, true);
         }
@@ -528,8 +542,81 @@ namespace CardClash
             var callback = _onColorChosen;
 
             _onColorChosen = null;
+            _pendingWildCard = null;
 
             callback?.Invoke(color);
+        }
+
+        #endregion
+
+        #region Client Input - Multi-Select
+
+        public void ToggleCardSelection(Card card)
+        {
+            if (!_playSameNumber || !IsMyTurn()) return;
+            if (card.CardData.Type != CardType.Number) return;
+
+            if (_selectedCards.Contains(card))
+            {
+                _selectedCards.Remove(card);
+                card.SetSelectedIndex(0);
+                RenumberSelectedCards();
+            }
+            else
+            {
+                // enforce same-number + max-count client-side (server re-validates authoritatively)
+                if (_selectedCards.Count > 0 && _selectedCards[0].CardData.FaceValue != card.CardData.FaceValue)
+                    return;
+
+                if (_selectedCards.Count >= _maxCardsPerTurn)
+                    return;
+                    
+                _selectedCards.Add(card);
+                card.SetSelectedIndex(_selectedCards.Count);
+            }
+
+            _gameButtonManager.SetPlaySelectedButtonState(_selectedCards.Count);
+            _handButtonsGameobject.SetActive(_selectedCards.Count >= 2);
+        }
+
+        private void RenumberSelectedCards()
+        {
+            for (int i = 0; i < _selectedCards.Count; i++)
+                _selectedCards[i].SetSelectedIndex(i + 1);
+        }
+
+        private void ClearCardSelection()
+        {
+            foreach (var card in _selectedCards)
+                if (card != null) card.SetSelectedIndex(0);
+
+            _selectedCards.Clear();
+            _gameButtonManager.SetPlaySelectedButtonState(0);
+            _handButtonsGameobject.SetActive(false);
+        }
+
+        private void OnPlaySelectedButtonClicked()
+        {
+            if (_selectedCards.Count < 2) return;
+
+            var cards = _selectedCards.Select(c => c.CardData).ToArray();
+
+            foreach (var card in _selectedCards)
+            {
+                card.SetSelectedIndex(0);
+                card.BeginReturnWatch();
+                card.PlayTowards(CardTargetTransform, _canvas.transform);
+            }
+
+            NetworkClient.Send(new ServerDeckMessage
+            {
+                serverDeckOperation = ServerDeckOperation.PlayMultipleCards,
+                Cards = cards,
+                chosenWildColor = CardColor.None
+            });
+
+            _selectedCards.Clear();
+            _handButtonsGameobject.SetActive(false);
         }
 
         #endregion
@@ -914,9 +1001,9 @@ namespace CardClash
         #region Server - Card Play
 
         [Server]
-        public void HandlePlayerCard(NetworkConnectionToClient conn, GameCard card, CardColor chosenWildColor)
+        public void HandlePlayerCard(NetworkConnectionToClient conn, GameCard card, CardColor chosenWildColor, bool applyEffect = true)
         {
-            Debug.Log($"[Server] HandlePlayerCard called: card={card}, conn={conn?.identity?.netId}");
+            Debug.Log($"[Server] HandlePlayerCard called: card={card}, conn={conn.identity.netId}");
 
             if (_matchEnded)
             {
@@ -1070,7 +1157,7 @@ namespace CardClash
                 }
             }
 
-            if (!_matchEnded)
+            if (!_matchEnded && applyEffect)
                 _cardEffects.Resolve(card.Type).Apply(this);
 
             RpcPlayDiscardEffect(card, _turnState.TurnDirection);
@@ -1124,8 +1211,11 @@ namespace CardClash
 
             // Play each card sequentially through the existing single-card pipeline,
             // so all effects (Skip/Reverse/DrawTwo/Wild color, win/last-card checks) apply.
-            foreach (var card in cards)
-                HandlePlayerCard(conn, card, chosenWildColor);
+            for (int i = 0; i < cards.Length; i++)
+            {
+                if (_matchEnded) break;
+                HandlePlayerCard(conn, cards[i], chosenWildColor, applyEffect: i == cards.Length - 1);
+            }
         }
 
         [Server]
@@ -1808,12 +1898,15 @@ namespace CardClash
                     continue;
 
                 _handCards.RemoveAt(i);
-                //Destroy(card.gameObject);
+
+                if (_selectedCards.Remove(card))
+                    RenumberSelectedCards();
 
                 break;
             }
 
             RefreshLastCardButtonInteractable();
+            RefreshMultiSelectEligibility();
         }
 
         #endregion
@@ -1913,7 +2006,7 @@ namespace CardClash
                 _topDiscardImage.sprite = sprite;
             }
 
-            _drawPileCountText.text = $"{drawCount} left";
+            _drawPileCountText.SetText("{0} left", drawCount);
 
             _reverseFlipbook.StartRotating(ToUnityColor(card.Color));
         }
@@ -1974,6 +2067,8 @@ namespace CardClash
 
             _gameButtonManager.SetPassButtonInteractable(false);
 
+            ClearCardSelection();
+
             if (GetPlayerGUI(oldNetId) is { } previousPlayerGUI)
                 previousPlayerGUI.ResetTurnTimer();
 
@@ -1981,6 +2076,14 @@ namespace CardClash
                 return;
 
             var isSelf = newNetId == selfNetId;
+
+            if (!isSelf && _onColorChosen != null)
+            {
+                _onColorChosen = null;
+                SetPanelVisible(_colorPickerPanel, false);
+                _pendingWildCard.CancelPendingPlay();
+                _pendingWildCard = null;
+            }
 
             _cardDrawButton.interactable = isSelf;
 
@@ -2110,6 +2213,37 @@ namespace CardClash
                     : canPlay
                         ? Card.HighlightState.Playable
                         : Card.HighlightState.Disabled);
+            }
+
+            RefreshMultiSelectEligibility();
+        }
+
+        [Client]
+        private void RefreshMultiSelectEligibility()
+        {
+            if (!_playSameNumber)
+            {
+                foreach (var card in _handCards)
+                    card.SetMultiSelectable(false);
+                return;
+            }
+
+            var counts = new Dictionary<int, int>();
+
+            foreach (var card in _handCards)
+            {
+                if (card.CardData.Type != CardType.Number) continue;
+                counts.TryGetValue(card.CardData.FaceValue, out var count);
+                counts[card.CardData.FaceValue] = count + 1;
+            }
+
+            foreach (var card in _handCards)
+            {
+                var eligible = card.CardData.Type == CardType.Number &&
+                               counts.TryGetValue(card.CardData.FaceValue, out var count) &&
+                               count >= 2;
+
+                card.SetMultiSelectable(eligible);
             }
         }
 

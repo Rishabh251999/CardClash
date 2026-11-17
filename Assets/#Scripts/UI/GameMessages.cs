@@ -606,7 +606,7 @@ namespace CardClash
         #region Create Room
 
         internal void CreateRoom(NetworkConnectionToClient conn, int maxPlayers, int startingCards, bool allowStacking, 
-            bool noPowerCardFinish, int maxCardsPerTurn)
+            bool noPowerCardFinish, bool playSameNumber, int maxCardsPerTurn)
         {
             if (conn == null ||
                 !_repo.PlayerInfos.TryGetValue(conn, out var playerInfo))
@@ -638,6 +638,7 @@ namespace CardClash
                 isStarted = false,
                 allowStacking = allowStacking,
                 noPowerCardFinish = noPowerCardFinish,
+                playSameNumber = playSameNumber,
                 maxCardsPerTurn = maxCardsPerTurn
             });
 

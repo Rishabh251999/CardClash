@@ -231,8 +231,8 @@ namespace CardClash
             switch (msg.serverRoomOperation)
             {
                 case ServerRoomOperation.Create:
-                    _roomService.CreateRoom(
-                        conn, msg.maxPlayers, msg.startingCards, msg.allowStacking, msg.noPowerCardFinish, msg.maxCardsPerTurn);
+                    _roomService.CreateRoom(conn, msg.maxPlayers, msg.startingCards, msg.allowStacking, 
+                        msg.noPowerCardFinish, msg.playSameNumber, msg.maxCardsPerTurn);
                     break;
 
                 case ServerRoomOperation.Join:
@@ -301,6 +301,10 @@ namespace CardClash
             {
                 case ServerDeckOperation.PlayCard:
                     controller.HandlePlayerCard(conn, msg.Card, msg.chosenWildColor);
+                    break;
+
+                case ServerDeckOperation.PlayMultipleCards:
+                    controller.HandlePlayerCards(conn, msg.Cards, msg.chosenWildColor);
                     break;
 
                 case ServerDeckOperation.DrawCard:
