@@ -240,23 +240,22 @@ namespace CardClash
         private void Update()
         {
             UpdateTurnTimerUI();
-            UpdateGameTimerUI();
+            UpdateGameTimerUI(); 
+            CheckPendingWildColorTimeout();
         }
 
         private void UpdateTurnTimerUI()
         {
-            var elapsed = NetworkTime.time - _turnStartTime;
-            var normalized = _gameRules.TurnTimeLimit > 0f ? 1f - (float)(elapsed / _gameRules.TurnTimeLimit) : 0f;
-            normalized = Mathf.Clamp01(normalized);
+            var turnTimer = new NetworkTimer(_turnStartTime, _gameRules.TurnTimeLimit);
+            var normalized = turnTimer.Normalized;
 
-            // Only update the shared ring if it represents the local player's turn
             var isLocalPlayersTurn = _currentPlayerNetId == NetworkClient.localPlayer.netId;
 
             if (_turnTimerRingImage != null && isLocalPlayersTurn)
             {
                 _turnTimerRingImage.fillAmount = normalized;
 
-                if (normalized <= 0f)
+                if (turnTimer.HasExpired)
                     _isTimerRunningLocally = false;
             }
 
@@ -269,10 +268,8 @@ namespace CardClash
             if (!_isGameRunningLocally || _gameTimerText == null)
                 return;
 
-            var elapsed = NetworkTime.time - _gameStartTime;
-            var remaining = Mathf.Max(0f, _gameRules.GameTimeLimit - (float)elapsed);
-
-            var totalSeconds = Mathf.FloorToInt(remaining);
+            var gameTimer = new NetworkTimer(_gameStartTime, _gameRules.GameTimeLimit);
+            var totalSeconds = Mathf.FloorToInt(gameTimer.RemainingTime);
 
             if (totalSeconds != _lastDisplayedGameSecond)
             {
@@ -284,8 +281,24 @@ namespace CardClash
                 _gameTimerText.SetText($"{minutes:00}:{seconds:00}");
             }
 
-            if (remaining <= 0f)
+            if (gameTimer.HasExpired)
                 _isGameRunningLocally = false;
+        }
+
+        [Client]
+        private void CheckPendingWildColorTimeout()
+        {
+            if (_onColorChosen == null) return;
+
+            if (NetworkClient.localPlayer is not { netId: var selfNetId } || _currentPlayerNetId != selfNetId)
+                return;
+
+            var turnTimer = new NetworkTimer(_turnStartTime, _gameRules.TurnTimeLimit);
+
+            if (turnTimer.RemainingTime > 0.3f)
+                return;
+
+            HandleColorPicked((CardColor)UnityEngine.Random.Range(1, 5)); // Red..Blue
         }
 
         private void SetPanelVisible(GameObject panel, bool visible)
@@ -556,21 +569,32 @@ namespace CardClash
             if (!_playSameNumber || !IsMyTurn()) return;
             if (card.CardData.Type != CardType.Number) return;
 
-            if (_selectedCards.Contains(card))
+            if (_selectedCards.Remove(card))
             {
-                _selectedCards.Remove(card);
                 card.SetSelectedIndex(0);
                 RenumberSelectedCards();
             }
             else
             {
-                // enforce same-number + max-count client-side (server re-validates authoritatively)
-                if (_selectedCards.Count > 0 && _selectedCards[0].CardData.FaceValue != card.CardData.FaceValue)
+                var faceValue = card.CardData.FaceValue;
+
+                if (_selectedCards.Count > 0 &&
+                    _selectedCards[0].CardData.FaceValue != faceValue)
                     return;
 
-                if (_selectedCards.Count >= _maxCardsPerTurn)
+                // only the first card in the stack must be legally playable against the top discard
+                if (_selectedCards.Count == 0 && !IsValidPlay(card.CardData))
                     return;
-                    
+
+                if (_maxCardsPerTurn < 2 || _selectedCards.Count >= _maxCardsPerTurn)
+                    return;
+
+                if (!_handCards.Any(other =>
+                        other != null && other != card &&
+                        other.CardData.Type == CardType.Number &&
+                        other.CardData.FaceValue == faceValue))
+                    return;
+
                 _selectedCards.Add(card);
                 card.SetSelectedIndex(_selectedCards.Count);
             }
@@ -1892,16 +1916,11 @@ namespace CardClash
         {
             for (int i = 0; i < _handCards.Count; i++)
             {
-                var card = _handCards[i];
-
-                if (card.CardData.Id != cardId)
+                if (_handCards[i].CardData.Id != cardId)
                     continue;
 
                 _handCards.RemoveAt(i);
-
-                if (_selectedCards.Remove(card))
-                    RenumberSelectedCards();
-
+                ClearCardSelection();
                 break;
             }
 

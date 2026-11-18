@@ -409,7 +409,7 @@ namespace CardClash
 
         public void OnPointerClick(PointerEventData eventData)
         {
-            if (!_button.interactable || _played || _pendingPlay) return;
+            if (_played || _pendingPlay) return;
             if (CardGameController.Instance is not { PlaySameNumberEnabled: true } gc) return;
             if (!_canMultiSelect) return;
 

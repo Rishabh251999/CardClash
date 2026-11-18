@@ -333,17 +333,19 @@ namespace CardClash
                 case ClientRoomOperation.Created:
                     OnRoomCreated(msg.roomCode);
 
-                    _roomManager.RefreshRoomPlayers(msg.playerInfo, msg.maxPlayers);
-                    _roomManager.SetRoomCode(msg.roomCode);
                     _roomManager.SetOwner(true);
+                    _roomManager.SetRoomCode(msg.roomCode);
+                    _roomManager.RefreshRoomPlayers(msg.playerInfo, msg.maxPlayers);
+                    _roomManager.SetHouseRules(msg.allowStacking, msg.noPowerCardFinish, msg.playSameNumber, msg.maxCardsPerTurn);
                     break;
 
                 case ClientRoomOperation.Joined:
                     OnRoomJoined(msg.roomCode);
 
-                    _roomManager.RefreshRoomPlayers(msg.playerInfo, msg.maxPlayers);
-                    _roomManager.SetRoomCode(msg.roomCode);
                     _roomManager.SetOwner(false);
+                    _roomManager.SetRoomCode(msg.roomCode);
+                    _roomManager.RefreshRoomPlayers(msg.playerInfo, msg.maxPlayers);
+                    _roomManager.SetHouseRules(msg.allowStacking, msg.noPowerCardFinish, msg.playSameNumber, msg.maxCardsPerTurn);
                     break;
 
                 case ClientRoomOperation.Left:

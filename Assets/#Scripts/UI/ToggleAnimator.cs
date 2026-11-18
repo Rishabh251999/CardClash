@@ -64,11 +64,8 @@ namespace CardClash
 
         public void StopAnimation()
         {
-            if (_animation != null)
-            {
-                _animation.Kill();
-                _animation = null;
-            }
+            _animation?.Kill();
+            _animation = null;
 
             if (_toggle.image != null)
             {
