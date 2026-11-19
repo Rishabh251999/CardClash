@@ -232,8 +232,11 @@ namespace CardClash
                 _transform.DORotate(new Vector3(_transform.eulerAngles.x, _transform.eulerAngles.y, 0f), 0.25f)
                     .SetEase(Ease.InOutSine);
 
-            PopulateDropdown(_maxPlayers, _gameRules.MinPlayers, _gameRules.MaxPlayers, _gameRules.DefaultPlayers);
-            PopulateDropdown(_startingCards, _gameRules.MinCards, _gameRules.MaxCards, _gameRules.DefaultStartingCards);
+            if (_previousState != ScreenType.HouseRules)
+            {
+                PopulateDropdown(_maxPlayers, _gameRules.MinPlayers, _gameRules.MaxPlayers, _gameRules.DefaultPlayers);
+                PopulateDropdown(_startingCards, _gameRules.MinCards, _gameRules.MaxCards, _gameRules.DefaultStartingCards);
+            }
 
             UpdateRulesVisibility();
 

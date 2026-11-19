@@ -22,6 +22,7 @@ namespace CardClash
         private const float DragTiltSmoothing = 14f;
         private const float SettleDuration = 0.35f;
         private const float SquashDuration = 0.18f;
+        private const float DoubleClickWindow = 0.3f;
 
         #endregion
 
@@ -30,6 +31,8 @@ namespace CardClash
         [SerializeField] private CardVisualDatabaseSO _visualDatabase;
 
         #endregion
+
+        private float _lastClickTime = -1f;
 
         #region Inspector
 
@@ -396,7 +399,7 @@ namespace CardClash
             _isDragging = false;
         }
 
-        private static float EaseOutBack(float t)
+        private float EaseOutBack(float t)
         {
             const float c1 = 1.70158f;
             const float c3 = c1 + 1f;
@@ -412,6 +415,12 @@ namespace CardClash
             if (_played || _pendingPlay) return;
             if (CardGameController.Instance is not { PlaySameNumberEnabled: true } gc) return;
             if (!_canMultiSelect) return;
+
+            var now = Time.unscaledTime;
+            var isDoubleClick = now - _lastClickTime <= DoubleClickWindow;
+            _lastClickTime = now;
+
+            if (!isDoubleClick) return;
 
             gc.ToggleCardSelection(this);
         }

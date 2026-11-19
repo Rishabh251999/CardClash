@@ -63,7 +63,7 @@ namespace CardClash
 
             var duration = 360f / Mathf.Max(1f, _rotationSpeed);
 
-            _rotationTween = transform.DOLocalRotate(new Vector3(0f, 0f, _clockwise * 360f),duration,
+            _rotationTween = transform.DOLocalRotate(new Vector3(0f, 0f, -_clockwise * 360f),duration,
                 RotateMode.LocalAxisAdd).SetEase(Ease.Linear).SetLoops(-1, LoopType.Incremental)
                 .SetUpdate(true);
         }

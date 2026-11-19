@@ -9,6 +9,20 @@ using UnityEngine.UI;
 
 namespace CardClash
 {
+    /// <summary>
+    /// Main Mirror <see cref="NetworkBehaviour"/> composition root for a match.
+    /// Owns all SyncVars/SyncObjects, Commands, and RPCs (Mirror requires these
+    /// to be physically declared on the NetworkBehaviour-derived class), the
+    /// Unity/Mirror lifecycle, and orchestration that glues the specialized
+    /// helper classes together:
+    /// <see cref="TurnManager"/> (turn progression/timer/pending draws),
+    /// <see cref="CardPlayHandler"/> (play validation/resolution),
+    /// <see cref="CardHandController"/> (client hand view),
+    /// <see cref="PlayerManager"/> (player registry/GUI roster/scoring),
+    /// <see cref="GameUIController"/> (buttons/panels/color picker),
+    /// <see cref="GameTimerController"/> (timer UI/countdown), and
+    /// <see cref="GameEffectsController"/> (notifications/visual/sound effects).
+    /// </summary>
     [RequireComponent(typeof(NetworkMatch))]
     public class CardGameController : NetworkBehaviour, ICardEffectContext
     {
@@ -18,7 +32,6 @@ namespace CardClash
         private readonly Color32 _yellowColor = new(255, 211, 61, 255); // #FFD33D
         private readonly Color32 _greenColor = new(47, 224, 138, 255); // #2FE08A
 
-        private readonly WaitForSeconds _waitForSeconds0_12 = new(0.12f);
         private readonly WaitForSeconds _waitForSeconds0_75 = new(0.75f);
         private readonly WaitForSeconds _waitForSeconds0_5 = new(0.125f);
 
@@ -127,17 +140,8 @@ namespace CardClash
 
 
         #region Runtime Collections
-        private readonly List<Card> _handCards = new();
-        private readonly List<Card> _selectedCards = new();
 
         private readonly SyncList<uint> _playerOrder = new();
-
-        private readonly List<GamePlayerGUI> _playerGUIs = new();
-
-        private readonly HashSet<uint> _playersWhoDrewThisTurn = new();
-
-        private readonly Dictionary<uint, int> _netIdToGuiIndex = new();
-        private readonly Dictionary<GameObject, Coroutine> _panelAnimations = new();
 
         private readonly SyncDictionary<uint, PlayerGameInfo> _playerData = new();
 
@@ -150,31 +154,29 @@ namespace CardClash
 
         private CardDeck _deck;
 
-        private Card _pendingWildCard;
-
-        private readonly CardTurnStateMachine _turnState = new();
-        private readonly PlayerHandRegistry _playerRegistry = new();
         private CardEffectResolver _cardEffects;
 
-        private Action<CardColor> _onColorChosen;
-
-        private Coroutine _countdownCoroutine;
         private Coroutine _gameTimerCoroutine;
-        private Coroutine _turnTimerCoroutine;
-        private Coroutine _notificationHideCoroutine;
 
         private bool _matchEnded;
         private bool _noPowerCardFinish;
         public bool PlaySameNumberEnabled => _playSameNumber;
-        private bool _isGameRunningLocally;
-        private bool _isTimerRunningLocally;
-        private bool _awaitingDrawnCardDecision;
-        private bool HasPendingDraw => _pendingDraw.Count > 0;
-
-        private int _lastDisplayedGameSecond = -1;
+        internal bool HasPendingDraw => _pendingDraw.Count > 0;
 
         #endregion
 
+
+        #region Helper Instances
+
+        private TurnManager _turnManager;
+        private PlayerManager _playerManager;
+        private CardPlayHandler _playHandler;
+        private CardHandController _handController;
+        private GameUIController _uiController;
+        private GameTimerController _timerController;
+        private GameEffectsController _effectsController;
+
+        #endregion
 
 
         #region Network Synced State
@@ -190,7 +192,7 @@ namespace CardClash
 
         [SyncVar(hook = nameof(OnTurnStartTimeChanged))]
         private double _turnStartTime;
-        
+
         [SyncVar(hook = nameof(OnGameStartTimeChanged))]
         private double _gameStartTime;
 
@@ -210,7 +212,15 @@ namespace CardClash
 
         private void Awake()
         {
-            _cardEffects = new CardEffectResolver();
+            _cardEffects = new();
+
+            _turnManager = new(this);
+            _playerManager = new(this);
+            _playHandler = new(this);
+            _handController = new(this);
+            _uiController = new(this);
+            _timerController = new(this);
+            _effectsController = new(this);
 
             _canvasGroup = _canvas.GetComponent<CanvasGroup>();
             _cardDrawButton = _cardDrawGameobject.GetComponent<Button>();
@@ -224,163 +234,20 @@ namespace CardClash
 
         private void OnDestroy()
         {
-            _playerData.OnChange -= OnPlayerDataChanged;
+            _playerData.OnChange -= _playerManager.HandlePlayerDataChanged;
 
-            if (_turnTimerCoroutine is { })
-                StopCoroutine(_turnTimerCoroutine);
+            _turnManager.StopTurnTimer();
 
             if (_gameTimerCoroutine is { })
                 StopCoroutine(_gameTimerCoroutine);
 
-            if (_notificationHideCoroutine is { })
-                StopCoroutine(_notificationHideCoroutine);
+            _effectsController.StopNotificationTimer();
         }
 
         [ClientCallback]
         private void Update()
         {
-            UpdateTurnTimerUI();
-            UpdateGameTimerUI(); 
-            CheckPendingWildColorTimeout();
-        }
-
-        private void UpdateTurnTimerUI()
-        {
-            var turnTimer = new NetworkTimer(_turnStartTime, _gameRules.TurnTimeLimit);
-            var normalized = turnTimer.Normalized;
-
-            var isLocalPlayersTurn = _currentPlayerNetId == NetworkClient.localPlayer.netId;
-
-            if (_turnTimerRingImage != null && isLocalPlayersTurn)
-            {
-                _turnTimerRingImage.fillAmount = normalized;
-
-                if (turnTimer.HasExpired)
-                    _isTimerRunningLocally = false;
-            }
-
-            if (GetPlayerGUI(_currentPlayerNetId) is { } currentPlayerGUI)
-                currentPlayerGUI.UpdateTurnTimer(normalized);
-        }
-
-        private void UpdateGameTimerUI()
-        {
-            if (!_isGameRunningLocally || _gameTimerText == null)
-                return;
-
-            var gameTimer = new NetworkTimer(_gameStartTime, _gameRules.GameTimeLimit);
-            var totalSeconds = Mathf.FloorToInt(gameTimer.RemainingTime);
-
-            if (totalSeconds != _lastDisplayedGameSecond)
-            {
-                _lastDisplayedGameSecond = totalSeconds;
-
-                var minutes = totalSeconds / 60;
-                var seconds = totalSeconds % 60;
-
-                _gameTimerText.SetText($"{minutes:00}:{seconds:00}");
-            }
-
-            if (gameTimer.HasExpired)
-                _isGameRunningLocally = false;
-        }
-
-        [Client]
-        private void CheckPendingWildColorTimeout()
-        {
-            if (_onColorChosen == null) return;
-
-            if (NetworkClient.localPlayer is not { netId: var selfNetId } || _currentPlayerNetId != selfNetId)
-                return;
-
-            var turnTimer = new NetworkTimer(_turnStartTime, _gameRules.TurnTimeLimit);
-
-            if (turnTimer.RemainingTime > 0.3f)
-                return;
-
-            HandleColorPicked((CardColor)UnityEngine.Random.Range(1, 5)); // Red..Blue
-        }
-
-        private void SetPanelVisible(GameObject panel, bool visible)
-        {
-            if (panel == null)
-                return;
-
-            if (panel.transform is not RectTransform rect)
-                return;
-
-            if (_panelAnimations.TryGetValue(panel, out var running) && running != null)
-                StopCoroutine(running);
-
-            if (visible)
-            {
-                rect.SetAsLastSibling();
-                _panelAnimations[panel] = StartCoroutine(PopInPanel(rect));
-            }
-            else
-            {
-                _panelAnimations[panel] = StartCoroutine(PopOutPanel(rect));
-            }
-        }
-
-        private IEnumerator PopInPanel(RectTransform rect)
-        {
-            const float overshootScale = 1.05f;
-            const float scaleUpDuration = 0.2f;
-            const float scaleDownDuration = 0.2f;
-
-            rect.localScale = Vector3.zero;
-
-            var elapsed = 0f;
-
-            while (elapsed < scaleUpDuration)
-            {
-                elapsed += Time.unscaledDeltaTime;
-
-                var t = Mathf.Clamp01(elapsed / scaleUpDuration);
-
-                rect.localScale = Vector3.one * Mathf.LerpUnclamped(0f, overshootScale, t);
-
-                yield return null;
-            }
-
-            rect.localScale = Vector3.one * overshootScale;
-
-            elapsed = 0f;
-
-            while (elapsed < scaleDownDuration)
-            {
-                elapsed += Time.unscaledDeltaTime;
-
-                var t = Mathf.Clamp01(elapsed / scaleDownDuration);
-
-                rect.localScale = Vector3.one * Mathf.LerpUnclamped(overshootScale, 1f, t);
-
-                yield return null;
-            }
-
-            rect.localScale = Vector3.one;
-        }
-
-        private IEnumerator PopOutPanel(RectTransform rect)
-        {
-            const float scaleDownDuration = 0.2f;
-
-            var startScale = rect.localScale;
-            var elapsed = 0f;
-
-            while (elapsed < scaleDownDuration)
-            {
-                elapsed += Time.unscaledDeltaTime;
-
-                var t = Mathf.Clamp01(elapsed / scaleDownDuration);
-
-                rect.localScale = Vector3.LerpUnclamped(startScale, Vector3.zero, t);
-
-                yield return null;
-            }
-
-            rect.localScale = Vector3.zero;
+            _timerController.Tick();
         }
 
         #endregion
@@ -392,7 +259,7 @@ namespace CardClash
         {
             Instance = this;
 
-            _playerData.OnChange += OnPlayerDataChanged;
+            _playerData.OnChange += _playerManager.HandlePlayerDataChanged;
 
             _canvasGroup.alpha = 1f;
             _canvasGroup.interactable = true;
@@ -400,129 +267,18 @@ namespace CardClash
 
             _handButtonsGameobject.SetActive(false);
 
-            _quitButton.AddListenerSafe(OnClickQuitButton);
-            _pauseButton.AddListenerSafe(OnPauseButtonClicked);
-            _resumeButton.AddListenerSafe(OnResumeButtonClicked);
-
-            _cardDrawButton.AddListenerSafe(OnDrawButtonClicked);
-            _passTurnButton.AddListenerSafe(OnPassButtonClicked);
-            _lastCardButton.AddListenerSafe(OnLastCardButtonClicked);
-            _playSelectedButton.AddListenerSafe(OnPlaySelectedButtonClicked);
-
-            _gameButtonManager.SetPassButtonInteractable(false);
-
-            _redColorButton.AddListenerSafe(OnRedColorClicked);
-            _blueColorButton.AddListenerSafe(OnBlueColorClicked);
-            _greenColorButton.AddListenerSafe(OnGreenColorClicked);
-            _yellowColorButton.AddListenerSafe(OnYellowColorClicked);
-
-            SetPanelVisible(_pausePanel, false);
-            SetPanelVisible(_countdownPanel, false);
-            SetPanelVisible(_colorPickerPanel, false);
+            _uiController.WireButtons();
         }
 
         public override void OnStopClient()
         {
-            _playerData.OnChange -= OnPlayerDataChanged;
+            _playerData.OnChange -= _playerManager.HandlePlayerDataChanged;
 
-            if (_countdownCoroutine != null)
-            {
-                StopCoroutine(_countdownCoroutine);
-                _countdownCoroutine = null;
-            }
+            _timerController.StopCountdownIfRunning();
 
-            _cardDrawButton.RemoveListenerSafe(OnDrawButtonClicked);
-            _passTurnButton.RemoveListenerSafe(OnPassButtonClicked);
-            _lastCardButton.RemoveListenerSafe(OnLastCardButtonClicked);
-            _playSelectedButton.RemoveListenerSafe(OnPlaySelectedButtonClicked);
-
-            _redColorButton.RemoveListenerSafe(OnRedColorClicked);
-            _yellowColorButton.RemoveListenerSafe(OnYellowColorClicked);
-            _greenColorButton.RemoveListenerSafe(OnGreenColorClicked);
-            _blueColorButton.RemoveListenerSafe(OnBlueColorClicked);
-
-            _quitButton.RemoveListenerSafe(OnClickQuitButton);
-            _pauseButton.RemoveListenerSafe(OnPauseButtonClicked);
-            _resumeButton.RemoveListenerSafe(OnResumeButtonClicked);
+            _uiController.UnwireButtons();
 
             Instance = null;
-        }
-
-        #endregion
-
-
-        #region UI - General
-
-        private void OnClickQuitButton()
-        {
-            foreach (var gui in _playerGUIs)
-            {
-                if (gui != null)
-                    Destroy(gui.gameObject);
-            }
-
-            _playerGUIs.Clear();
-            _netIdToGuiIndex.Clear();
-
-            NetworkClient.Send(new ServerDeckMessage
-            {
-                serverDeckOperation = ServerDeckOperation.QuitMatch
-            });
-        }
-
-        private void OpenAndClosePausePanel(bool value) => SetPanelVisible(_pausePanel, value);
-
-        private void OnPauseButtonClicked() => OpenAndClosePausePanel(true);
-
-        private void OnResumeButtonClicked() => OpenAndClosePausePanel(false);
-
-        #endregion
-
-
-        #region Client Input - Draw / Pass
-
-        [Client]
-        private void OnDrawButtonClicked()
-        {
-            if (!IsMyTurn())
-                return;
-
-            NetworkClient.Send(new ServerDeckMessage
-            {
-                serverDeckOperation = ServerDeckOperation.DrawCard
-            });
-        }
-
-        [Client]
-        private void OnPassButtonClicked()
-        {
-            if (!_awaitingDrawnCardDecision)
-                return;
-
-            _awaitingDrawnCardDecision = false;
-
-            _gameButtonManager.SetPassButtonInteractable(false);
-
-            RefreshHandInteractability(false);
-
-            NetworkClient.Send(new ServerDeckMessage
-            {
-                serverDeckOperation = ServerDeckOperation.PassTurn
-            });
-        }
-
-        [Client]
-        private void OnLastCardButtonClicked()
-        {
-            if (!IsMyTurn())
-                return;
-
-            NetworkClient.Send(new ServerDeckMessage
-            {
-                serverDeckOperation = ServerDeckOperation.CallLastCard
-            });
-
-            _gameButtonManager.SetCallOutButtonInteractable(false);
         }
 
         #endregion
@@ -531,117 +287,15 @@ namespace CardClash
         #region Client Input - Wild Color
 
         [Client]
-        public void ShowColorPicker(Action<CardColor> onColorChosen, Card pendingCard)
-        {
-            _onColorChosen = onColorChosen;
-            _pendingWildCard = pendingCard;
-
-            SetPanelVisible(_colorPickerPanel, true);
-        }
-
-        private void OnRedColorClicked() => HandleColorPicked(CardColor.Red);
-
-        private void OnYellowColorClicked() => HandleColorPicked(CardColor.Yellow);
-
-        private void OnGreenColorClicked() => HandleColorPicked(CardColor.Green);
-
-        private void OnBlueColorClicked() => HandleColorPicked(CardColor.Blue);
-
-        [Client]
-        private void HandleColorPicked(CardColor color)
-        {
-            SetPanelVisible(_colorPickerPanel, false);
-
-            var callback = _onColorChosen;
-
-            _onColorChosen = null;
-            _pendingWildCard = null;
-
-            callback?.Invoke(color);
-        }
+        public void ShowColorPicker(Action<CardColor> onColorChosen, Card pendingCard) =>
+            _uiController.ShowColorPicker(onColorChosen, pendingCard);
 
         #endregion
 
+
         #region Client Input - Multi-Select
 
-        public void ToggleCardSelection(Card card)
-        {
-            if (!_playSameNumber || !IsMyTurn()) return;
-            if (card.CardData.Type != CardType.Number) return;
-
-            if (_selectedCards.Remove(card))
-            {
-                card.SetSelectedIndex(0);
-                RenumberSelectedCards();
-            }
-            else
-            {
-                var faceValue = card.CardData.FaceValue;
-
-                if (_selectedCards.Count > 0 &&
-                    _selectedCards[0].CardData.FaceValue != faceValue)
-                    return;
-
-                // only the first card in the stack must be legally playable against the top discard
-                if (_selectedCards.Count == 0 && !IsValidPlay(card.CardData))
-                    return;
-
-                if (_maxCardsPerTurn < 2 || _selectedCards.Count >= _maxCardsPerTurn)
-                    return;
-
-                if (!_handCards.Any(other =>
-                        other != null && other != card &&
-                        other.CardData.Type == CardType.Number &&
-                        other.CardData.FaceValue == faceValue))
-                    return;
-
-                _selectedCards.Add(card);
-                card.SetSelectedIndex(_selectedCards.Count);
-            }
-
-            _gameButtonManager.SetPlaySelectedButtonState(_selectedCards.Count);
-            _handButtonsGameobject.SetActive(_selectedCards.Count >= 2);
-        }
-
-        private void RenumberSelectedCards()
-        {
-            for (int i = 0; i < _selectedCards.Count; i++)
-                _selectedCards[i].SetSelectedIndex(i + 1);
-        }
-
-        private void ClearCardSelection()
-        {
-            foreach (var card in _selectedCards)
-                if (card != null) card.SetSelectedIndex(0);
-
-            _selectedCards.Clear();
-            _gameButtonManager.SetPlaySelectedButtonState(0);
-            _handButtonsGameobject.SetActive(false);
-        }
-
-        private void OnPlaySelectedButtonClicked()
-        {
-            if (_selectedCards.Count < 2) return;
-
-            var cards = _selectedCards.Select(c => c.CardData).ToArray();
-
-            foreach (var card in _selectedCards)
-            {
-                card.SetSelectedIndex(0);
-                card.BeginReturnWatch();
-                card.PlayTowards(CardTargetTransform, _canvas.transform);
-            }
-
-            NetworkClient.Send(new ServerDeckMessage
-            {
-                serverDeckOperation = ServerDeckOperation.PlayMultipleCards,
-                Cards = cards,
-                chosenWildColor = CardColor.None
-            });
-
-            _selectedCards.Clear();
-            _handButtonsGameobject.SetActive(false);
-        }
+        public void ToggleCardSelection(Card card) => _handController.ToggleCardSelection(card);
 
         #endregion
 
@@ -649,44 +303,12 @@ namespace CardClash
         #region Server - Player Management
 
         [Server]
-        public void AddPlayer(NetworkConnectionToClient conn, PlayerRoomInfo info)
-        {
-            uint netId = conn.identity.netId;
-
-            _playerRegistry.AddPlayer(netId, new PlayerEntry
-            {
-                Conn = conn,
-                RoomInfo = info
-            });
-
-            _turnState.AddPlayer(netId);
-
-            _playerData[netId] = new PlayerGameInfo
-            {
-                connectionId = netId,
-                cardCount = 0,
-                playerName = info.playerName,
-                isOwner = info.isOwner,
-                avatarId = info.avatarId,
-            };
-
-            _playerOrder.Add(netId);
-        }
+        public void AddPlayer(NetworkConnectionToClient conn, PlayerRoomInfo info) =>
+            _playerManager.AddPlayer(conn, info);
 
         [Server]
-        public void UpdatePlayerCardCount(NetworkConnectionToClient conn, int newCount)
-        {
-            uint netId = conn.identity.netId;
-
-            if (!_playerData.ContainsKey(netId))
-                return;
-
-            var data = _playerData[netId];
-
-            data.cardCount = newCount;
-
-            _playerData[netId] = data;
-        }
+        public void UpdatePlayerCardCount(NetworkConnectionToClient conn, int newCount) =>
+            _playerManager.UpdatePlayerCardCount(conn, newCount);
 
         [Server]
         public void HandlePlayerQuit(NetworkConnectionToClient conn)
@@ -698,7 +320,7 @@ namespace CardClash
 
             var netId = conn.identity.netId;
 
-            if (!_playerRegistry.Players.ContainsKey(netId))
+            if (!_playerManager.Registry.Players.ContainsKey(netId))
             {
                 return;
             }
@@ -706,17 +328,14 @@ namespace CardClash
             if (conn.identity.TryGetComponent<NetworkMatch>(out var quittingPlayerMatch))
                 quittingPlayerMatch.matchId = Guid.Empty;
 
-            var wasCurrentPlayer = _turnState.RemovePlayer(netId);
+            var wasCurrentPlayer = _turnManager.RemovePlayer(netId);
 
-            _playerRegistry.RemovePlayer(netId);
-            _playerData.Remove(netId);
-            _playersWhoDrewThisTurn.Remove(netId);
-            _netIdToGuiIndex.Remove(netId);
+            _playerManager.RemovePlayer(netId);
 
-            if (wasCurrentPlayer && _turnState.PlayerCount > 0)
+            if (wasCurrentPlayer && _turnManager.PlayerCount > 0)
             {
-                _currentPlayerNetId = _turnState.CurrentPlayerNetId;
-                _turnStartTime = NetworkTime.time;
+                CurrentPlayerNetId = _turnManager.CurrentPlayerNetIdFromState;
+                TurnStartTime = NetworkTime.time;
             }
 
             if (conn.identity != null)
@@ -724,7 +343,7 @@ namespace CardClash
                 NetworkServer.Destroy(conn.identity.gameObject);
             }
 
-            if (_turnState.PlayerCount < _gameRules.MinPlayers)
+            if (_turnManager.PlayerCount < _gameRules.MinPlayers)
             {
                 EndMatch();
                 return;
@@ -736,12 +355,7 @@ namespace CardClash
         [Server]
         public void EndMatch()
         {
-            if (_turnTimerCoroutine is { })
-            {
-                StopCoroutine(_turnTimerCoroutine);
-
-                _turnTimerCoroutine = null;
-            }
+            _turnManager.StopTurnTimer();
 
             if (_gameTimerCoroutine is { })
             {
@@ -749,7 +363,7 @@ namespace CardClash
                 _gameTimerCoroutine = null;
             }
 
-            foreach (var entry in _playerRegistry.Players.Values)
+            foreach (var entry in _playerManager.Registry.Players.Values)
             {
                 entry.Conn.Send(new ClientRoomMessage
                 {
@@ -764,8 +378,8 @@ namespace CardClash
                 }
             }
 
-            _playerRegistry.Clear();
-            _turnState.Clear();
+            _playerManager.Clear();
+            _turnManager.Clear();
             _playerData.Clear();
         }
 
@@ -814,7 +428,7 @@ namespace CardClash
             yield return new WaitForSeconds(waitDuration);
 
             StartGameTimer();
-            SetNextTurn(_turnState.TurnOrder[0]);
+            _turnManager.SetNextTurn(_turnManager.TurnOrder[0]);
         }
 
         [Server]
@@ -841,13 +455,13 @@ namespace CardClash
         [Server]
         private void DealCards(int count)
         {
-            foreach (var (netId, entry) in _playerRegistry.Players)
+            foreach (var (netId, entry) in _playerManager.Registry.Players)
             {
                 List<GameCard> hand = new();
 
                 _deck.DrawMultiple(count, hand);
 
-                _playerRegistry.AddCardsToHand(netId, hand);
+                _playerManager.Registry.AddCardsToHand(netId, hand);
 
                 var data = _playerData[netId];
 
@@ -891,121 +505,18 @@ namespace CardClash
         #region Server - Turn Management
 
         [Server]
-        private void SetNextTurn(uint netID)
-        {
-            _currentPlayerNetId = netID;
-
-            RestartTurnTimer();
-
-            if (HasPendingDraw && !PlayerHasMatchingStackCard(netID))
-            {
-                ResolvePendingDraw(netID);
-            }
-        }
+        public void AdvanceTurn() => _turnManager.AdvanceTurn();
 
         [Server]
-        private bool PlayerHasMatchingStackCard(uint netId)
-        {
-            if (!HasPendingDraw)
-                return true;
-
-            if (!_allowStacking)
-                return false;
-
-            foreach (var card in _playerRegistry.GetHand(netId))
-            {
-                if (card.Type == _pendingDraw.Type) 
-                    return true;
-            }
-
-            return false;
-        }
+        public void ReverseTurnDirection() => _turnManager.ReverseTurnDirection();
 
         [Server]
-        private void RestartTurnTimer()
-        {
-            if (_turnTimerCoroutine is { })
-            {
-                StopCoroutine(_turnTimerCoroutine);
-            }
-
-            _turnStartTime = NetworkTime.time;
-
-            _turnTimerCoroutine = StartCoroutine(TurnTimerRoutine(_currentPlayerNetId));
-        }
+        public void SkipNextPlayer() => _turnManager.SkipNextPlayer();
 
         [Server]
-        private IEnumerator TurnTimerRoutine(uint netIdForThisTurn)
-        {
-            var endTime = NetworkTime.time + _gameRules.TurnTimeLimit;
+        public bool IsCurrentPlayer(NetworkConnectionToClient conn) => _turnManager.IsCurrentPlayer(conn);
 
-            while (NetworkTime.time < endTime)
-                yield return null;
-
-            if (_matchEnded || _currentPlayerNetId != netIdForThisTurn)
-                yield break;
-
-            if (HasPendingDraw)
-            {
-                ResolvePendingDraw(netIdForThisTurn);
-                yield break;
-            }
-
-            if (_playersWhoDrewThisTurn.Contains(netIdForThisTurn))
-            {
-                _playersWhoDrewThisTurn.Remove(netIdForThisTurn);
-                AdvanceTurn();
-                yield break;
-            }
-
-            ForcePlayerDraw(netIdForThisTurn, 1, true);
-            AdvanceTurn();
-        }
-
-        [Server]
-        public void AdvanceTurn()
-        {
-            if (_matchEnded)
-                return;
-
-            _turnState.AdvanceTurn();
-
-            SetNextTurn(_turnState.CurrentPlayerNetId);
-        }
-
-        [Server]
-        public void ReverseTurnDirection()
-        {
-            _turnState.ReverseDirection();
-        }
-
-        [Server]
-        public void SkipNextPlayer()
-        {
-            var skippedNetId = _turnState.GetNextPlayerNetId();
-
-            _turnState.SkipNextPlayer();
-
-            var tint = ToUnityColor(_syncedTopDiscard.Color);
-
-            StartCoroutine(InvokeAfterDelay(_playMoveDuration,
-                () => RpcPlaySkipEffect(skippedNetId, tint)));
-        }
-
-        [Server]
-        public bool IsCurrentPlayer(NetworkConnectionToClient conn)
-        {
-            return conn.identity.netId == _currentPlayerNetId;
-        }
-
-        [Server]
-        private uint GetNextPlayerNetId()
-        {
-            return _turnState.GetNextPlayerNetId();
-        }
-
-
-        int ICardEffectContext.PlayerCount => _turnState.PlayerCount;
+        int ICardEffectContext.PlayerCount => _turnManager.PlayerCount;
 
         void ICardEffectContext.ReverseTurnDirection() => ReverseTurnDirection();
 
@@ -1013,11 +524,11 @@ namespace CardClash
 
         void ICardEffectContext.AdvanceTurn() => AdvanceTurn();
 
-        uint ICardEffectContext.GetNextPlayerNetId() => GetNextPlayerNetId();
+        uint ICardEffectContext.GetNextPlayerNetId() => _turnManager.GetNextPlayerNetId();
 
-        void ICardEffectContext.ForcePlayerDraw(uint targetNetId, int count) => ForcePlayerDraw(targetNetId, count);
+        void ICardEffectContext.ForcePlayerDraw(uint targetNetId, int count) => _turnManager.ForcePlayerDraw(targetNetId, count);
 
-        void ICardEffectContext.AddPendingDraw(CardType type, int count) => AddPendingDraw(type, count);
+        void ICardEffectContext.AddPendingDraw(CardType type, int count) => _turnManager.AddPendingDraw(type, count);
 
         #endregion
 
@@ -1025,262 +536,15 @@ namespace CardClash
         #region Server - Card Play
 
         [Server]
-        public void HandlePlayerCard(NetworkConnectionToClient conn, GameCard card, CardColor chosenWildColor, bool applyEffect = true)
-        {
-            Debug.Log($"[Server] HandlePlayerCard called: card={card}, conn={conn.identity.netId}");
-
-            if (_matchEnded)
-            {
-                Debug.Log("[Server] Rejected: match already ended.");
-                return;
-            }
-
-            if (!IsValidPlayerAction(conn))
-            {
-                Debug.Log("[Server] Rejected: not a valid player action (not your turn or invalid conn).");
-                return;
-            }
-
-            var netId = conn.identity.netId;
-
-            if (!IsPlayableAgainstTop(card))
-            {
-                Debug.Log($"[Server] Rejected: {card} not playable against top " +
-                    $"(pendingDrawCount={_pendingDraw.Count}, pendingDrawType={_pendingDraw.Type}, " +
-                    $"topDiscard={_deck.TopDiscard})");
-
-                Debug.LogWarning($"[Server] Rejected illegal play " + $"from netId {netId}: {card}");
-
-                conn.Send(new ClientDeckMessage
-                {
-                    clientDeckOperation = ClientDeckOperation.Error,
-
-                    errorMessage = $"Illegal play: {card} does not match " + $"the current discard/stack requirement."
-                });
-
-                return;
-            }
-
-            if (_playerData[netId].cardCount == 1)
-            {
-                Debug.Log($"[Server] Checking finish rule: noPowerCardFinish={_noPowerCardFinish}, " +
-                    $"cardCount={_playerData[netId].cardCount}, cardType={card.Type}, isPower={IsPowerCard(card.Type)}");
-            }
-
-            if (_noPowerCardFinish && _playerData[netId].cardCount == 1 && IsPowerCard(card.Type))
-            {
-                Debug.LogWarning($"[Server] Rejected finishing play " + $"from netId {netId}: {card} cannot be the last card.");
-
-                conn.Send(new ClientDeckMessage
-                {
-                    clientDeckOperation = ClientDeckOperation.Error,
-
-                    errorMessage = "House Rule: You cannot finish " + "the game with a Wild card."
-                });
-
-                return;
-            }
-
-            if (card.Type is CardType.Wild or CardType.WildDrawFour)
-            {
-                if (chosenWildColor is CardColor.None)
-                {
-                    Debug.LogWarning($"[Server] Rejected wild play " + $"from netId {netId}: no color chosen.");
-
-                    conn.Send(new ClientDeckMessage
-                    {
-                        clientDeckOperation = ClientDeckOperation.Error,
-
-                        errorMessage = "You must choose a color " + "for the Wild card."
-                    });
-
-                    return;
-                }
-
-                card.Color = chosenWildColor;
-
-                ShowNotification(chosenWildColor switch
-                {
-                    CardColor.Red => NotificationType.Red,
-                    CardColor.Blue => NotificationType.Blue,
-                    CardColor.Green => NotificationType.Green,
-                    CardColor.Yellow => NotificationType.Yellow,
-                    _ => NotificationType.LastCard
-                }, "Color changes to: " + chosenWildColor.ToString());
-
-                AudioManager.Instance.PlaySoundEffect("color_changed");
-            }
-
-            if (_turnTimerCoroutine is { })
-            {
-                StopCoroutine(_turnTimerCoroutine);
-                _turnTimerCoroutine = null;
-            }
-
-            if (!TryRemoveFromHand(netId, card))
-            {
-                Debug.LogWarning($"[Server] Rejected play from netId " + $"${netId}: card {card} not found " + $"in tracked hand.");
-
-                conn.Send(new ClientDeckMessage
-                {
-                    clientDeckOperation = ClientDeckOperation.Error,
-
-                    errorMessage = $"Illegal play: {card} " + $"is not in your hand."
-                });
-
-                return;
-            }
-
-            _deck.Discard(card);
-
-            SetTopDiscard(card, _deck.DrawPileCount);
-
-            var data = _playerData[netId];
-
-            data.cardCount -= 1;
-
-            var wasDrawnCard = _playerRegistry.WasLastDrawnCard(netId, card.Id);
-
-            _playerRegistry.ClearLastDrawnCardId(netId);
-
-            _playersWhoDrewThisTurn.Remove(netId);
-
-            if (wasDrawnCard && data.cardCount == 1)
-            {
-                data.hasCalledLastCard = true;
-            }
-
-            _playerData[netId] = data;
-
-            conn.Send(new ClientDeckMessage
-            {
-                clientDeckOperation = ClientDeckOperation.CardPlayed,
-
-                TopDiscardCard = card,
-
-                DrawPileCount = _deck.DrawPileCount
-            });
-
-
-            if (data.cardCount <= 0)
-            {
-                StartCoroutine(HandlePlayerWin());
-                return;
-            }
-
-            if (data.cardCount == 1)
-            {
-                if (!data.hasCalledLastCard)
-                {
-                    PenalizeMissedLastCardCall(netId);
-                }
-
-                else if (wasDrawnCard)
-                {
-                    ShowNotification(NotificationType.LastCard, "LAST CARD! " + data.playerName);
-                }
-            }
-
-            if (!_matchEnded && applyEffect)
-                _cardEffects.Resolve(card.Type).Apply(this);
-
-            RpcPlayDiscardEffect(card, _turnState.TurnDirection);
-        }
+        public void HandlePlayerCard(NetworkConnectionToClient conn, GameCard card, CardColor chosenWildColor, bool applyEffect = true) =>
+            _playHandler.HandlePlayerCard(conn, card, chosenWildColor, applyEffect);
 
         [Server]
-        public void HandlePlayerCards(NetworkConnectionToClient conn, GameCard[] cards, CardColor chosenWildColor)
-        {
-            if (!_playSameNumber || cards == null || cards.Length == 0)
-                return;
-
-            if (_matchEnded || !IsValidPlayerAction(conn))
-                return;
-
-            // House rule validation: all cards must share the same number, and the
-            // first card must be legally playable against the current top/stack.
-            if (cards.Length > _maxCardsPerTurn)
-            {
-                conn.Send(new ClientDeckMessage
-                {
-                    clientDeckOperation = ClientDeckOperation.Error,
-                    errorMessage = $"House Rule: You can only play up to {_maxCardsPerTurn} cards at once."
-                });
-                return;
-            }
-
-            var firstCard = cards[0];
-
-            if (firstCard.Type != CardType.Number ||
-                cards.Any(c => c.Type != CardType.Number || c.FaceValue != firstCard.FaceValue))
-            {
-                conn.Send(new ClientDeckMessage
-                {
-                    clientDeckOperation = ClientDeckOperation.Error,
-                    errorMessage = "House Rule: All stacked cards must be the same number."
-                });
-                return;
-            }
-
-            if (!IsPlayableAgainstTop(firstCard))
-            {
-                conn.Send(new ClientDeckMessage
-                {
-                    clientDeckOperation = ClientDeckOperation.Error,
-                    errorMessage = $"Illegal play: {firstCard} does not match the current discard requirement."
-                });
-                return;
-            }
-
-            var netId = conn.identity.netId;
-
-            // Play each card sequentially through the existing single-card pipeline,
-            // so all effects (Skip/Reverse/DrawTwo/Wild color, win/last-card checks) apply.
-            for (int i = 0; i < cards.Length; i++)
-            {
-                if (_matchEnded) break;
-                HandlePlayerCard(conn, cards[i], chosenWildColor, applyEffect: i == cards.Length - 1);
-            }
-        }
+        public void HandlePlayerCards(NetworkConnectionToClient conn, GameCard[] cards, CardColor chosenWildColor) =>
+            _playHandler.HandlePlayerCards(conn, cards, chosenWildColor);
 
         [Server]
-        private IEnumerator InvokeAfterDelay(float delay, Action action)
-        {
-            yield return new WaitForSeconds(delay);
-            action?.Invoke();
-        }
-
-        [Server]
-        private bool TryRemoveFromHand(uint netId, GameCard card)
-        {
-            return _playerRegistry.TryRemoveCard(netId, card);
-        }
-
-        [Server]
-        private bool IsPlayableAgainstTop(GameCard card)
-        {
-            if (_pendingDraw.Count > 0)
-                return _allowStacking && card.Type == _pendingDraw.Type;
-
-            if (_deck.TopDiscard is not { } topCard)
-                return true;
-
-            return card.Type switch
-            {
-                CardType.Wild or CardType.WildDrawFour => true,
-
-                _ when card.Color == topCard.Color => true,
-
-                CardType.Number when topCard.Type is CardType.Number
-                    && card.FaceValue == topCard.FaceValue => true,
-
-                not CardType.Number when card.Type == topCard.Type => true,
-
-                _ => false
-            };
-        }
-
-        [Server]
-        private void SetTopDiscard(GameCard card, int drawCount)
+        internal void SetTopDiscard(GameCard card, int drawCount)
         {
             _syncedTopDiscard = card;
 
@@ -1288,254 +552,22 @@ namespace CardClash
         }
 
         [Server]
-        public void HandleLastCardCall(NetworkConnectionToClient conn)
-        {
-            if (!IsValidPlayerAction(conn))
-                return;
-
-            var netId = conn.identity.netId;
-
-            if (!_playerData.TryGetValue(netId, out var data))
-                return;
-
-            if (_playerRegistry.GetHandCount(netId) > _gameRules.LastCardCallThreshold)
-            {
-                conn.Send(new ClientDeckMessage
-                {
-                    clientDeckOperation = ClientDeckOperation.Error,
-
-                    errorMessage = $"You can only call LAST CARD when you have {_gameRules.LastCardCallThreshold} cards or fewer."
-                });
-
-                return;
-            }
-
-            if (data.hasCalledLastCard)
-                return;
-
-            data.hasCalledLastCard = true;
-
-            _playerData[netId] = data;
-
-            foreach (var entry in _playerRegistry.Players.Values)
-            {
-                entry.Conn.Send(new ClientDeckMessage
-                {
-                    clientDeckOperation = ClientDeckOperation.LastCardCalled
-                });
-            }
-
-            ShowNotification(NotificationType.LastCard, "LAST CARD! " + data.playerName);
-        }
-
-        [Server]
-        private void ResetLastCardCall(uint netId)
-        {
-            if (!_playerData.TryGetValue(netId, out var data))
-                return;
-
-            if (!data.hasCalledLastCard)
-                return;
-
-            data.hasCalledLastCard = false;
-
-            _playerData[netId] = data;
-        }
-
-        [Server]
-        private void PenalizeMissedLastCardCall(uint netId)
-        {
-            Debug.Log($"[Server] netId {netId} failed to call LAST CARD. Applying penalty draw.");
-
-            ForcePlayerDraw(netId, _gameRules.MissedLastCardPenalty, true);
-
-            ResetLastCardCall(netId);
-        }
-
-        [Server]
-        private bool IsPowerCard(CardType type) =>
-            type is CardType.Wild or CardType.WildDrawFour;
+        public void HandleLastCardCall(NetworkConnectionToClient conn) => _playHandler.HandleLastCardCall(conn);
 
         #endregion
 
 
         #region Server - Card Drawing
 
-        [Server]
-        private void ForcePlayerDraw(uint targetNetId, int count, bool isPenalty = false)
-        {
-            if (!_playerRegistry.Players.TryGetValue(targetNetId, out var entry))
-            {
-                Debug.LogWarning($"[Server] ForcePlayerDraw: no connection found for netId {targetNetId}.");
-
-                return;
-            }
-
-            var drawn = new List<GameCard>();
-
-            _deck.DrawMultiple(count, drawn);
-
-            _playerRegistry.AddCardsToHand(targetNetId, drawn);
-
-            var data = _playerData[targetNetId];
-
-            data.cardCount += drawn.Count;
-
-            if (data.cardCount != 1)
-                ResetLastCardCall(targetNetId);
-
-            _playerData[targetNetId] = data;
-
-            entry.Conn.Send(new ClientDeckMessage
-            {
-                clientDeckOperation = ClientDeckOperation.CardDrawn,
-
-                Cards = drawn.ToArray(),
-
-                DrawPileCount = _deck.DrawPileCount,
-
-                CanPlayDrawnCard = false
-            });
-
-            if (isPenalty)
-            {
-                TargetPlayPenaltyDrawSound(entry.Conn);
-            }
-
-            RpcShowTopDiscard(_syncedTopDiscard, _deck.DrawPileCount);
-        }
-
         [TargetRpc]
-        private void TargetPlayPenaltyDrawSound(NetworkConnectionToClient target)
-        {
-            AudioManager.Instance.PlaySoundEffect("draw_penalty");
-        }
+        internal void TargetPlayPenaltyDrawSound(NetworkConnectionToClient target) =>
+            _effectsController.PlayPenaltyDrawSound();
 
         [Server]
-        private void ResolvePendingDraw(uint netId)
-        {
-            var count = _pendingDraw.Count;
-
-            _pendingDraw = default;
-
-            ForcePlayerDraw(netId, count);
-
-            _playersWhoDrewThisTurn.Remove(netId);
-            _playerRegistry.ClearLastDrawnCardId(netId);
-
-            if (_playerRegistry.Players.TryGetValue(netId, out var entry))
-            {
-                entry.Conn.Send(new ClientDeckMessage
-                {
-                    clientDeckOperation = ClientDeckOperation.StackedDraw,
-                    DrawPileCount = _deck.DrawPileCount
-                });
-            }
-
-            AdvanceTurn();
-        }
+        public void HandleDrawCard(NetworkConnectionToClient conn) => _turnManager.HandleDrawCard(conn);
 
         [Server]
-        private void AddPendingDraw(CardType type, int count)
-        {
-            _pendingDraw = new()
-            {
-                Count = _pendingDraw.Count + count,
-                Type = type
-            };
-        }
-
-        [Server]
-        private bool IsValidPlayerAction(NetworkConnectionToClient conn)
-        {
-            if (conn?.identity == null)
-                return false;
-
-            return _playerRegistry.Players.ContainsKey(conn.identity.netId)
-                   && conn.identity.netId == _currentPlayerNetId;
-        }
-
-
-        [Server]
-        public void HandleDrawCard(NetworkConnectionToClient conn)
-        {
-            if (!IsValidPlayerAction(conn))
-                return;
-
-            var netId = conn.identity.netId;
-
-            if (HasPendingDraw)
-            {
-                ResolvePendingDraw(netId);
-                return;
-            }
-
-            if (!_deck.TryDraw(out GameCard drawnCard))
-            {
-                Debug.LogWarning("[Server] Draw pile empty.");
-
-                return;
-            }
-
-            _playerRegistry.AddCardsToHand(netId, new[] { drawnCard });
-
-            _playersWhoDrewThisTurn.Add(netId);
-
-            var data = _playerData[netId];
-
-            data.cardCount++;
-
-            _playerData[netId] = data;
-
-            if (data.cardCount != 1)
-                ResetLastCardCall(netId);
-
-            var canPlay = IsPlayableAgainstTop(drawnCard);
-
-            conn.Send(new ClientDeckMessage
-            {
-                clientDeckOperation = ClientDeckOperation.CardDrawn,
-
-                Cards = new[] { drawnCard },
-
-                DrawPileCount = _deck.DrawPileCount,
-
-                CanPlayDrawnCard = canPlay
-            });
-
-            RpcShowTopDiscard(_syncedTopDiscard, _deck.DrawPileCount);
-
-            if (canPlay)
-            {
-                _playerRegistry.SetLastDrawnCardId(netId, drawnCard.Id);
-            }
-
-            else
-            {
-                _playerRegistry.ClearLastDrawnCardId(netId);
-
-                AdvanceTurn();
-            }
-        }
-
-        [Server]
-        public void HandlePassTurn(NetworkConnectionToClient conn)
-        {
-            if (!IsValidPlayerAction(conn))
-                return;
-
-            if (!IsCurrentPlayer(conn))
-                return;
-
-            var netId = conn.identity.netId;
-
-            _playerRegistry.ClearLastDrawnCardId(netId);
-            _playersWhoDrewThisTurn.Remove(netId);
-
-            Debug.Log("[Server] Player passed after drawing.");
-
-            AdvanceTurn();
-        }
+        public void HandlePassTurn(NetworkConnectionToClient conn) => _turnManager.HandlePassTurn(conn);
 
         #endregion
 
@@ -1543,31 +575,11 @@ namespace CardClash
         #region Server - Notification
 
         [Server]
-        private void ShowNotification(NotificationType notificationType, string text)
+        internal void ShowNotification(NotificationType notificationType, string text)
         {
             RpcShowNotification(notificationType, text);
 
-            ResetNotificationHideTimer();
-        }
-
-        [Server]
-        private void ResetNotificationHideTimer()
-        {
-            if (_notificationHideCoroutine is { })
-            {
-                StopCoroutine(_notificationHideCoroutine);
-                _notificationHideCoroutine = null;
-            }
-            _notificationHideCoroutine = StartCoroutine(HideNotificationAfterDelay(_gameRules.NotificationDisplayDuration));
-        }
-
-        [Server]
-        private IEnumerator HideNotificationAfterDelay(float delay)
-        {
-            yield return new WaitForSeconds(delay);
-
-            _notificationHideCoroutine = null;
-            RpcHideNotification();
+            _effectsController.ResetNotificationHideTimer();
         }
 
         #endregion
@@ -1576,10 +588,11 @@ namespace CardClash
         #region Client - Notification
 
         [ClientRpc]
-        private void RpcShowNotification(NotificationType notificationType, string text) => _notificationView.Show(notificationType, text);
+        private void RpcShowNotification(NotificationType notificationType, string text) =>
+            _effectsController.ShowNotificationVisual(notificationType, text);
 
         [ClientRpc]
-        private void RpcHideNotification() => _notificationView.Hide();
+        internal void RpcHideNotification() => _effectsController.HideNotificationVisual();
 
         #endregion
 
@@ -1593,11 +606,7 @@ namespace CardClash
 
             yield return _waitForSeconds0_75;
 
-            if (_turnTimerCoroutine is { })
-            {
-                StopCoroutine(_turnTimerCoroutine);
-                _turnTimerCoroutine = null;
-            }
+            _turnManager.StopTurnTimer();
 
             if (_gameTimerCoroutine is { })
             {
@@ -1605,7 +614,7 @@ namespace CardClash
                 _gameTimerCoroutine = null;
             }
 
-            var finalScores = CalculateFinalScores(out var winnerNetId); 
+            var finalScores = _playerManager.CalculateFinalScores(out var winnerNetId); 
 
             RpcShowGameEndScreen(finalScores.ToArray());
 
@@ -1615,19 +624,18 @@ namespace CardClash
         }
 
         [Server]
+        internal void TriggerPlayerWin() => StartCoroutine(HandlePlayerWin());
+
+        [Server]
         private void EndMatchByTimeout()
         {
             _matchEnded = true;
 
-            if (_turnTimerCoroutine is { })
-            {
-                StopCoroutine(_turnTimerCoroutine);
-                _turnTimerCoroutine = null;
-            }
+            _turnManager.StopTurnTimer();
 
             _gameTimerCoroutine = null;
 
-            var finalScores = CalculateFinalScores(out var winnerNetId);
+            var finalScores = _playerManager.CalculateFinalScores(out var winnerNetId);
 
             RpcShowGameEndScreen(finalScores.ToArray());
 
@@ -1639,7 +647,7 @@ namespace CardClash
         [Server]
         private void PlayEndGameSounds(uint winnerNetId)
         {
-            foreach (var entry in _playerRegistry.Players)
+            foreach (var entry in _playerManager.Registry.Players)
             {
                 var conn = entry.Value.Conn;
 
@@ -1658,7 +666,7 @@ namespace CardClash
         [Server]
         private void NotifyOwnerCanRestart()
         {
-            var owner = _playerRegistry.Players.Values.FirstOrDefault(e => e.RoomInfo.isOwner);
+            var owner = _playerManager.Registry.Players.Values.FirstOrDefault(e => e.RoomInfo.isOwner);
 
             if (owner?.Conn != null)
                 TargetShowPlayAgainButton(owner.Conn);
@@ -1668,74 +676,19 @@ namespace CardClash
         [TargetRpc]
         private void TargetShowPlayAgainButton(NetworkConnectionToClient target) => _gameEndManager.ShowPlayAgainButton();
 
-        [Server]
-        private List<GameEndPlayerInfo> CalculateFinalScores(out uint winnerNetId)
-        {
-            List<GameEndPlayerInfo> finalScores = new();
-
-            winnerNetId = default;
-            var lowestScore = int.MaxValue;
-
-            foreach (var i in _playerRegistry.AllHands)
-            {
-                var winnerScore = 0;
-
-                foreach (var j in i.Value)
-                {
-                    var points = j.Type switch
-                    {
-                        CardType.Number => 7,
-                        CardType.Skip => 20,
-                        CardType.Reverse => 20,
-                        CardType.DrawTwo => 20,
-                        CardType.Wild => 50,
-                        CardType.WildDrawFour => 50,
-                        _ => 0
-                    };
-
-                    winnerScore += points;
-                }
-
-                var playerName = _playerData.TryGetValue(i.Key, out var info) ? info.playerName : "Unknown";
-                var avatarId = _playerData.TryGetValue(i.Key, out var avatarInfo) ? avatarInfo.avatarId : 0;
-
-                finalScores.Add(new GameEndPlayerInfo
-                {
-                    PlayerName = playerName,
-                    PlayerScore = winnerScore,
-                    AvatarId = avatarId
-                });
-
-                if (winnerScore < lowestScore)
-                {
-                    lowestScore = winnerScore;
-                    winnerNetId = i.Key;
-                }
-            }
-
-            return finalScores;
-        }
-
         #endregion
+
 
         #region Client Game End
 
         [TargetRpc]
-        private void TargetPlayWinSound(NetworkConnectionToClient target) => PlayGameEndSfx("win");
+        private void TargetPlayWinSound(NetworkConnectionToClient target) => _effectsController.PlayGameEndSfx("win");
 
         [TargetRpc]
-        private void TargetPlayLoseSound(NetworkConnectionToClient target) => PlayGameEndSfx("lose");
-
-        [Client]
-        private void PlayGameEndSfx(string soundName)
-        {
-            if (string.IsNullOrEmpty(soundName) || AudioManager.Instance == null)
-                return;
-
-            AudioManager.Instance.PlaySoundEffect(soundName);
-        }
+        private void TargetPlayLoseSound(NetworkConnectionToClient target) => _effectsController.PlayGameEndSfx("lose");
 
         #endregion
+
 
         #region Server - Restart
 
@@ -1747,7 +700,7 @@ namespace CardClash
 
             var netId = sender.identity.netId;
 
-            if (!_playerRegistry.Players.TryGetValue(netId, out var entry) || !entry.RoomInfo.isOwner)
+            if (!_playerManager.Registry.Players.TryGetValue(netId, out var entry) || !entry.RoomInfo.isOwner)
                 return;
 
             RestartMatch();
@@ -1760,8 +713,8 @@ namespace CardClash
         {
             _pendingDraw = default;
 
-            _playerRegistry.ClearHands();
-            _turnState.ResetTurnIndex();
+            _playerManager.Registry.ClearHands();
+            _turnManager.ResetTurnIndex();
 
             foreach(var netId in _playerData.Keys.ToList())
             {
@@ -1790,17 +743,11 @@ namespace CardClash
         {
             _gameEndManager.HideGameEndScreen();
 
-            foreach(var card in _handCards)
-            {
-                if(card != null)
-                    Destroy(card.gameObject);
-            }
-
-            _handCards.Clear();
+            _handController.ClearForRestart();
 
             _gameButtonManager.SetPassButtonInteractable(false);
 
-            _playersWhoDrewThisTurn.Clear();
+            _turnManager.ResetDrawTracking();
         }
 
         #endregion
@@ -1811,11 +758,7 @@ namespace CardClash
         [ClientRpc]
         private void RpcShowGameEndScreen(GameEndPlayerInfo[] standings)
         {
-            if (_onColorChosen != null)
-            {
-                _onColorChosen = null;
-                SetPanelVisible(_colorPickerPanel, false);
-            }
+            _uiController.CancelPendingColorPicker(cancelPendingCardPlay: false);
 
             _gameEndManager.ShowGameEndScreen(standings);
         }
@@ -1826,107 +769,15 @@ namespace CardClash
         #region Client - Card Display
 
         [Client]
-        public void ShowDealtCards(GameCard[] cards, bool applyStartDelay = false)
-        {
-            StartCoroutine(ShowDealtCardsStaggered(cards, applyStartDelay ? 0.5f: 0f));
-        }
-
-        private IEnumerator ShowDealtCardsStaggered(GameCard[] cards, float startDelay)
-        {
-            if (startDelay > 0f)
-            {
-                yield return new WaitForSeconds(startDelay);
-            }
-
-            var views = new List<Card>();
-
-            foreach (var card in cards)
-            {
-                var cardView = Instantiate(_cardPrefab, _handContainer);
-
-                cardView.Setup(card);
-
-                _handCards.Add(cardView);
-
-                views.Add(cardView);
-            }
-
-            LayoutRebuilder.ForceRebuildLayoutImmediate((RectTransform)_handContainer);
-
-            foreach (var cardView in views)
-            {
-                cardView.CaptureDealTarget();
-            }
-
-            foreach (var cardView in views)
-            {
-                cardView.PrepareDeal(
-                    _cardDrawGameobject.transform
-                );
-            }
-
-            foreach (var cardView in views)
-            {
-                cardView.AnimateDeal();
-
-                yield return
-                    _waitForSeconds0_12;
-            }
-
-            RefreshHandInteractability(
-                IsMyTurn()
-            );
-            RefreshLastCardButtonInteractable();
-        }
+        public void ShowDealtCards(GameCard[] cards, bool applyStartDelay = false) =>
+            _handController.ShowDealtCards(cards, applyStartDelay);
 
         [Client]
-        public void OnDrawnCardReceived(bool canPlay, GameCard drawnCard)
-        {
-            if (!canPlay)
-            {
-                RefreshHandInteractability(false);
-                RefreshLastCardButtonInteractable();
-
-                return;
-            }
-
-            _awaitingDrawnCardDecision = true;
-
-            _gameButtonManager.SetPassButtonInteractable(true);
-
-            foreach (var cardView in _handCards)
-            {
-                if (!cardView.TryGetComponent<Card>(out var card))
-                {
-                    continue;
-                }
-
-                var isDrawnCard = card.CardData.Id == drawnCard.Id;
-
-                var isPlayable = IsValidPlay(card.CardData);
-
-                card.SetInteractable(isDrawnCard && isPlayable);
-            }
-
-            RefreshLastCardButtonInteractable();
-        }
+        public void OnDrawnCardReceived(bool canPlay, GameCard drawnCard) =>
+            _handController.OnDrawnCardReceived(canPlay, drawnCard);
 
         [Client]
-        public void RemoveHandCard(uint cardId)
-        {
-            for (int i = 0; i < _handCards.Count; i++)
-            {
-                if (_handCards[i].CardData.Id != cardId)
-                    continue;
-
-                _handCards.RemoveAt(i);
-                ClearCardSelection();
-                break;
-            }
-
-            RefreshLastCardButtonInteractable();
-            RefreshMultiSelectEligibility();
-        }
+        public void RemoveHandCard(uint cardId) => _handController.RemoveHandCard(cardId);
 
         #endregion
 
@@ -1939,71 +790,7 @@ namespace CardClash
             if (this == null || !gameObject.activeInHierarchy)
                 return;
 
-            if (_countdownCoroutine != null)
-            {
-                StopCoroutine(_countdownCoroutine);
-                _countdownCoroutine = null;
-            }
-
-            _countdownCoroutine = StartCoroutine(StartCountdownRoutine());
-        }
-
-        [Client]
-        private IEnumerator StartCountdownRoutine()
-        {
-            SetPanelVisible(_countdownPanel, true);
-
-            (string Text, string Sfx)[] steps =
-            {
-                ("3", "countdown_beep"),
-                ("2", "countdown_beep"),
-                ("1", "countdown_beep"),
-                ("GO!", "countdown_go")
-            };
-
-            foreach (var step in steps)
-            {
-                yield return StartCoroutine(PlayCountdownStep(step.Text, step.Sfx));
-            }
-
-            SetPanelVisible(_countdownPanel, false);
-
-            _countdownCoroutine = null;
-        }
-
-        [Client]
-        private IEnumerator PlayCountdownStep(string text, string sfxName)
-        {
-            if (_countdownText == null)
-                yield break;
-
-            const float startScale = 1.6f;
-            const float endScale = 1f;
-
-            _countdownText.text = text;
-
-            AudioManager.Instance.PlaySoundEffect(sfxName);
-
-            var rect = _countdownText.rectTransform;
-
-            rect.localScale = Vector3.one * startScale;
-
-            var elapsed = 0f;
-
-            while (elapsed < _countdownStepDuration)
-            {
-                elapsed += Time.deltaTime;
-
-                float t = Mathf.Clamp01(elapsed / _countdownStepDuration);
-
-                float scale = Mathf.Lerp(startScale, endScale, 1f - (1f - t) * (1f - t));
-
-                rect.localScale = Vector3.one * scale;
-
-                yield return null;
-            }
-
-            rect.localScale = Vector3.one * endScale;
+            _timerController.PlayStartCountdown();
         }
 
         #endregion
@@ -2012,60 +799,32 @@ namespace CardClash
         #region Client RPC - Card State
 
         [ClientRpc]
-        private void RpcShowTopDiscard(GameCard card, int drawCount)
+        internal void RpcShowTopDiscard(GameCard card, int drawCount)
         {
             if (this == null || !gameObject.activeInHierarchy)
                 return;
 
             _syncedTopDiscard = card;
 
-            if (_cardVisualDatabase.GetSprite(card) is { } sprite)
-            {
-                _topDiscardImage.color = new Color(1f, 1f, 1f, 1f);
-                _topDiscardImage.sprite = sprite;
-            }
-
-            _drawPileCountText.SetText("{0} left", drawCount);
-
-            _reverseFlipbook.StartRotating(ToUnityColor(card.Color));
+            _effectsController.ShowTopDiscardVisual(card, drawCount);
         }
 
         [ClientRpc]
-        private void RpcPlayDiscardEffect(GameCard card, int turnDirection)
+        internal void RpcPlayDiscardEffect(GameCard card, int turnDirection)
         {
             if (this == null || !gameObject.activeInHierarchy)
                 return;
 
-            if (card.Type is CardType.Reverse && _reverseFlipbook is { })
-            {
-                _reverseFlipbook.SetDirection(turnDirection);
-
-                AudioManager.Instance.PlaySoundEffect("reverse");
-                VibrationUtility.Vibrate(milliseconds: 250, amplitude: 255);
-            }
+            _effectsController.PlayDiscardEffectVisual(card, turnDirection);
         }
 
         [ClientRpc]
-        private void RpcPlaySkipEffect(uint skippedNetId, Color tint)
+        internal void RpcPlaySkipEffect(uint skippedNetId, Color tint)
         {
             if (this == null || !gameObject.activeInHierarchy)
                 return;
 
-            if (GetPlayerGUI(skippedNetId) is { } skippedPlayerGUI)
-                skippedPlayerGUI.PlaySkipEffect(tint);
-
-            // Only play the big on-screen skip flipbook, sound, and vibration
-            // for the player who was actually skipped.
-            if (NetworkClient.localPlayer is { netId: var selfNetId } && selfNetId == skippedNetId)
-            {
-                if (_skipFlipbook is { })
-                {
-                    _skipFlipbook.Play(tint);
-                }
-
-                AudioManager.Instance.PlaySoundEffect("skip");
-                VibrationUtility.Vibrate(milliseconds: 250, amplitude: 255);
-            }
+            _effectsController.PlaySkipEffectVisual(skippedNetId, tint);
         }
 
         #endregion
@@ -2073,22 +832,15 @@ namespace CardClash
 
         #region Sync Callbacks
 
-        private GamePlayerGUI GetPlayerGUI(uint netId)
-        {
-            return _netIdToGuiIndex.TryGetValue(netId, out var index) && index >= 0 && index < _playerGUIs.Count
-                ? _playerGUIs[index]
-                : null;
-        }
-
         private void OnCurrentPlayerChanged(uint oldNetId, uint newNetId)
         {
-            _awaitingDrawnCardDecision = false;
+            _handController.AwaitingDrawnCardDecision = false;
 
             _gameButtonManager.SetPassButtonInteractable(false);
 
-            ClearCardSelection();
+            _handController.ClearCardSelection();
 
-            if (GetPlayerGUI(oldNetId) is { } previousPlayerGUI)
+            if (_playerManager.GetPlayerGUI(oldNetId) is { } previousPlayerGUI)
                 previousPlayerGUI.ResetTurnTimer();
 
             if (NetworkClient.localPlayer is not { netId: var selfNetId })
@@ -2096,18 +848,13 @@ namespace CardClash
 
             var isSelf = newNetId == selfNetId;
 
-            if (!isSelf && _onColorChosen != null)
-            {
-                _onColorChosen = null;
-                SetPanelVisible(_colorPickerPanel, false);
-                _pendingWildCard.CancelPendingPlay();
-                _pendingWildCard = null;
-            }
+            if (!isSelf)
+                _uiController.CancelPendingColorPicker(cancelPendingCardPlay: true);
 
             _cardDrawButton.interactable = isSelf;
 
-            RefreshHandInteractability(isSelf);
-            RefreshLastCardButtonInteractable();
+            _handController.RefreshHandInteractability(isSelf);
+            _handController.RefreshLastCardButtonInteractable();
         }
 
         private void OnTopDiscardChanged(GameCard oldCard, GameCard newCard)
@@ -2116,94 +863,21 @@ namespace CardClash
 
             if (NetworkClient.localPlayer is { netId: var selfNetId } && _currentPlayerNetId == selfNetId)
             {
-                RefreshHandInteractability(true);
+                _handController.RefreshHandInteractability(true);
             }
         }
 
-        private void OnTurnStartTimeChanged(double oldValue, double newValue)
-        {
-            var isMyTurn = NetworkClient.localPlayer is { netId: var selfNetId } && _currentPlayerNetId == selfNetId;
+        private void OnTurnStartTimeChanged(double oldValue, double newValue) =>
+            _timerController.HandleTurnStartTimeChanged(oldValue, newValue);
 
-            _isTimerRunningLocally = isMyTurn;
-
-            if (_turnTimerRingImage != null)
-            {
-                _turnTimerRingImage.fillAmount = 1f;
-            }
-        }
-
-        private void OnGameStartTimeChanged(double oldValue, double newValue)
-        {
-            _isGameRunningLocally = true;
-
-            var timer = $"{Mathf.FloorToInt(_gameRules.GameTimeLimit / 60f):00}:" +
-                    $"{Mathf.FloorToInt(_gameRules.GameTimeLimit % 60f):00}";
-
-            _gameTimerText.SetText($"{timer}");
-        }
+        private void OnGameStartTimeChanged(double oldValue, double newValue) =>
+            _timerController.HandleGameStartTimeChanged(oldValue, newValue);
 
         private void OnPendingDrawChanged(PendingDrawState oldValue, PendingDrawState newValue)
         {
             if(NetworkClient.localPlayer is { netId: var selfNetId } && _currentPlayerNetId == selfNetId)
             {
-                RefreshHandInteractability(true);
-            }
-        }
-
-        private void OnPlayerDataChanged(SyncIDictionary<uint, PlayerGameInfo>.Operation op, uint netId, PlayerGameInfo data)
-        {
-            if (NetworkClient.localPlayer is { netId: var selfNetId } && netId == selfNetId)
-                return;
-
-            if (op == SyncIDictionary<uint, PlayerGameInfo>.Operation.OP_REMOVE)
-            {
-                if (_netIdToGuiIndex.TryGetValue(netId, out int index))
-                {
-                    if (index >= 0 && index < _playerGUIs.Count)
-                    {
-                        Destroy(_playerGUIs[index].gameObject);
-                        _playerGUIs.RemoveAt(index);
-
-                        // Adjust indices for all remaining players that were after the removed one
-                        var keys = _netIdToGuiIndex.Keys.ToList();
-                        foreach (var key in keys)
-                        {
-                            if (key != netId && _netIdToGuiIndex[key] > index)
-                            {
-                                _netIdToGuiIndex[key]--;
-                            }
-                        }
-                    }
-                    _netIdToGuiIndex.Remove(netId);
-                }
-                return;
-            }
-
-            // Handle player addition
-            if (!_netIdToGuiIndex.TryGetValue(netId, out int playerIndex))
-            {
-                var playerGUI = Instantiate(_playerGUIPrefab, _playerGUIsParent);
-                _netIdToGuiIndex[netId] = _playerGUIs.Count;
-                _playerGUIs.Add(playerGUI);
-
-                if (_playerData.TryGetValue(netId, out var currentData))
-                    playerGUI.UpdateCardCount(currentData.cardCount);
-
-                var seatIndex = _playerOrder.IndexOf(netId);
-                if (seatIndex >= 0)
-                    playerGUI.transform.SetSiblingIndex(seatIndex);
-
-                return;
-            }
-
-            // Handle update to existing player
-            if (playerIndex >= 0 && playerIndex < _playerGUIs.Count)
-            {
-                if (_playerData.TryGetValue(netId, out var updatedData))
-                {
-                    _playerGUIs[playerIndex].UpdateCardCount(updatedData.cardCount);
-                    _playerGUIs[playerIndex].SetUserName(updatedData.playerName);
-                }
+                _handController.RefreshHandInteractability(true);
             }
         }
 
@@ -2213,104 +887,19 @@ namespace CardClash
         #region Client - Turn / Card Validation
 
         [Client]
-        public bool IsMyTurn()
-        {
-            return NetworkClient.localPlayer
-                       is { netId: var netId }
-                   && _currentPlayerNetId ==
-                   netId;
-        }
+        public bool IsMyTurn() => _turnManager.IsMyTurn();
 
-        public void RefreshHandInteractability(bool isMyTurn)
-        {
-            foreach (var card in _handCards)
-            {
-                var canPlay = isMyTurn && IsValidPlay(card.CardData);
-                card.SetInteractable(canPlay);
-                card.SetHighlight(!isMyTurn
-                    ? Card.HighlightState.Normal
-                    : canPlay
-                        ? Card.HighlightState.Playable
-                        : Card.HighlightState.Disabled);
-            }
-
-            RefreshMultiSelectEligibility();
-        }
+        public void RefreshHandInteractability(bool isMyTurn) => _handController.RefreshHandInteractability(isMyTurn);
 
         [Client]
-        private void RefreshMultiSelectEligibility()
-        {
-            if (!_playSameNumber)
-            {
-                foreach (var card in _handCards)
-                    card.SetMultiSelectable(false);
-                return;
-            }
-
-            var counts = new Dictionary<int, int>();
-
-            foreach (var card in _handCards)
-            {
-                if (card.CardData.Type != CardType.Number) continue;
-                counts.TryGetValue(card.CardData.FaceValue, out var count);
-                counts[card.CardData.FaceValue] = count + 1;
-            }
-
-            foreach (var card in _handCards)
-            {
-                var eligible = card.CardData.Type == CardType.Number &&
-                               counts.TryGetValue(card.CardData.FaceValue, out var count) &&
-                               count >= 2;
-
-                card.SetMultiSelectable(eligible);
-            }
-        }
-
-        [Client]
-        public void RefreshLastCardButtonInteractable()
-        {
-            if (_lastCardButton == null)
-                return;
-
-            var canReachLastCard = _handCards.Count <= _gameRules.LastCardCallThreshold && 
-                _handCards.Exists(card => IsValidPlay(card.CardData));
-            var lastCard = IsMyTurn() && canReachLastCard && !HasLocallyCalledLastCard();
-
-            _gameButtonManager.SetCallOutButtonInteractable(lastCard);
-        }
-
-        [Client]
-        private bool HasLocallyCalledLastCard()
-        {
-            if (NetworkClient.localPlayer is not { netId: var selfNetId })
-                return false;
-
-            return _playerData.TryGetValue(selfNetId, out var data) && data.hasCalledLastCard;
-        }
-
-        private bool IsValidPlay(GameCard card)
-        {
-            if (_pendingDraw.Count > 0)
-                return _allowStacking && card.Type == _pendingDraw.Type;
-
-            if (card.Type is CardType.Wild || card.Type is CardType.WildDrawFour)
-                return true;
-
-            if (card.Color == _syncedTopDiscard.Color)
-                return true;
-
-            if (card.Type is CardType.Number && _syncedTopDiscard.Type is CardType.Number)
-                return card.FaceValue == _syncedTopDiscard.FaceValue;
-
-            return card.Type == _syncedTopDiscard.Type;
-        }
+        public void RefreshLastCardButtonInteractable() => _handController.RefreshLastCardButtonInteractable();
 
         #endregion
 
 
         #region Utility
 
-        private Color ToUnityColor(CardColor color)
+        internal Color ToUnityColor(CardColor color)
         {
             return color switch
             {
@@ -2321,6 +910,96 @@ namespace CardClash
                 _ => Color.white
             };
         }
+
+        #endregion
+
+
+        #region Internal Accessors
+
+        // Exposes inspector-serialized fields, SyncVars/SyncObjects, and
+        // controller-private runtime state to the helper classes above, since
+        // Mirror's weaver requires SyncVar fields/writes and [Command]/[ClientRpc]/
+        // [TargetRpc] methods to remain physically declared on this
+        // NetworkBehaviour-derived class. Helper classes never touch private
+        // fields directly — only through these accessors.
+
+        internal TurnManager TurnManager => _turnManager;
+        internal PlayerManager PlayerManager => _playerManager;
+        internal CardPlayHandler PlayHandler => _playHandler;
+        internal CardHandController HandController => _handController;
+        internal GameUIController UIController => _uiController;
+
+        internal Card CardPrefab => _cardPrefab;
+        internal GameRulesSO GameRules => _gameRules;
+        internal NotificationView NotificationView => _notificationView;
+        internal CardVisualDatabaseSO CardVisualDatabase => _cardVisualDatabase;
+        internal SkipCard SkipFlipbook => _skipFlipbook;
+        internal ReverseCard ReverseFlipbook => _reverseFlipbook;
+        internal GameButtonManager GameButtonManager => _gameButtonManager;
+
+        internal Button QuitButton => _quitButton;
+        internal Button PauseButton => _pauseButton;
+        internal Button ResumeButton => _resumeButton;
+        internal Button PassTurnButton => _passTurnButton;
+        internal Button PlaySelectedButton => _playSelectedButton;
+        internal Button LastCardButton => _lastCardButton;
+        internal Button RedColorButton => _redColorButton;
+        internal Button BlueColorButton => _blueColorButton;
+        internal Button GreenColorButton => _greenColorButton;
+        internal Button YellowColorButton => _yellowColorButton;
+        internal Button CardDrawButton => _cardDrawButton;
+
+        internal Image TopDiscardImage => _topDiscardImage;
+        internal Image TurnTimerRingImage => _turnTimerRingImage;
+
+        internal TextMeshProUGUI CountdownText => _countdownText;
+        internal TextMeshProUGUI GameTimerText => _gameTimerText;
+        internal TextMeshProUGUI DrawPileCountText => _drawPileCountText;
+
+        internal GameObject PausePanel => _pausePanel;
+        internal GameObject CountdownPanel => _countdownPanel;
+        internal GameObject ColorPickerPanel => _colorPickerPanel;
+        internal GameObject CardDrawGameObject => _cardDrawGameobject;
+        internal GameObject HandButtonsGameObject => _handButtonsGameobject;
+
+        internal Transform PlayerGUIsParent => _playerGUIsParent;
+        internal Transform HandContainer => _handContainer;
+
+        internal GamePlayerGUI PlayerGUIPrefab => _playerGUIPrefab;
+
+        internal float CountdownStepDuration => _countdownStepDuration;
+
+        internal CardDeck Deck => _deck;
+        internal CardEffectResolver CardEffects => _cardEffects;
+        internal bool MatchEnded => _matchEnded;
+        internal bool NoPowerCardFinish => _noPowerCardFinish;
+        internal bool AllowStacking => _allowStacking;
+        internal int MaxCardsPerTurn => _maxCardsPerTurn;
+
+        internal SyncList<uint> PlayerOrder => _playerOrder;
+        internal SyncDictionary<uint, PlayerGameInfo> PlayerData => _playerData;
+
+        internal uint CurrentPlayerNetId
+        {
+            get => _currentPlayerNetId;
+            set => _currentPlayerNetId = value;
+        }
+
+        internal PendingDrawState PendingDraw
+        {
+            get => _pendingDraw;
+            set => _pendingDraw = value;
+        }
+
+        internal GameCard SyncedTopDiscard => _syncedTopDiscard;
+
+        internal double TurnStartTime
+        {
+            get => _turnStartTime;
+            set => _turnStartTime = value;
+        }
+
+        internal double GameStartTime => _gameStartTime;
 
         #endregion
     }
