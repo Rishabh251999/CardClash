@@ -90,11 +90,7 @@ namespace CardClash
 
             StartSpinner();
 
-            if (NetworkServer.active)
-            {
-                Debug.LogWarning("RetryConnection: NetworkServer is active, cannot retry connection.");
-            }
-            else
+            if (!NetworkServer.active)
             {
                 if (NetworkClient.isConnected || NetworkClient.active)
                 {

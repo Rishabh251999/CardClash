@@ -68,8 +68,6 @@ namespace CardClash
         {
             ScreenType = state;
 
-            Debug.Log($"UIManager: SetState({state}, instant: {instant})");
-
             foreach (var entry in _panels)
             {
                 if (entry.CanvasGroup == null)

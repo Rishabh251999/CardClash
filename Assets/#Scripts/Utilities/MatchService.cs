@@ -53,17 +53,12 @@ namespace CardClash
                         player, out var info) ||
                     info.roomCode != roomCode))
             {
-                Debug.LogWarning(
-                    $"[Server] Invalid player data in room {roomCode}.");
                 return;
             }
 
             if (players.Any(player =>
                     !_repo.PlayerInfos[player].isReady))
             {
-                Debug.LogWarning(
-                    $"[Server] Cannot start room {roomCode}: " +
-                    "not all players are ready.");
                 return;
             }
 
@@ -71,8 +66,6 @@ namespace CardClash
                 NetworkManager.singleton == null ||
                 NetworkManager.singleton.playerPrefab == null)
             {
-                Debug.LogError(
-                    "[Server] Match controller or player prefab is missing.");
                 return;
             }
 
@@ -80,16 +73,12 @@ namespace CardClash
             if (!_matchControllerPrefab.TryGetComponent<NetworkMatch>(
                     out _))
             {
-                Debug.LogError(
-                    "[Server] Match controller prefab requires NetworkMatch.");
                 return;
             }
 
             if (!NetworkManager.singleton.playerPrefab.TryGetComponent<NetworkMatch>(
                     out _))
             {
-                Debug.LogError(
-                    "[Server] Player prefab requires NetworkMatch.");
                 return;
             }
 
@@ -163,14 +152,9 @@ namespace CardClash
                 _repo.RoomConnections.Remove(roomCode);
 
                 _sendRoomList?.Invoke();
-
-                Debug.Log(
-                    $"[Server] Match started for room {roomCode}.");
             }
-            catch (System.Exception exception)
+            catch (System.Exception)
             {
-                Debug.LogException(exception);
-
                 // Avoid retaining a partially registered match.
                 _repo.MatchControllers.Remove(roomCode);
                 _repo.RoomDecks.Remove(roomCode);
@@ -202,11 +186,6 @@ namespace CardClash
             if (!_repo.PlayerInfos.TryGetValue(
                     conn, out var playerInfo))
                 return;
-
-            Debug.Log(
-                $"[Server] Player quitting match. " +
-                $"Connection={conn.connectionId}, " +
-                $"Owner={playerInfo.isOwner}");
 
             // Owner quitting ends the match for everyone.
             if (playerInfo.isOwner)
@@ -244,14 +223,10 @@ namespace CardClash
             if (!controller.TryGetComponent<NetworkMatch>(
                     out var networkMatch))
             {
-                Debug.LogWarning(
-                    "[Server] Cannot end match: NetworkMatch is missing.");
                 return;
             }
 
             var roomCode = networkMatch.matchId;
-
-            Debug.Log($"[Server] Ending match for room {roomCode}.");
 
             controller.EndMatch();
 

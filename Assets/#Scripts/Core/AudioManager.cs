@@ -43,8 +43,6 @@ namespace CardClash
             _sfxLookup = BuildLookup(Resources.LoadAll<AudioClip>(SfxResourcesFolder));
             _musicLookup = BuildLookup(Resources.LoadAll<AudioClip>(MusicResourcesFolder));
 
-            Debug.Log($"AudioManager: Loaded {_sfxLookup.Count} sound effects and {_musicLookup.Count} music tracks.");
-
             _musicSource = GetComponent<AudioSource>();
             _musicSource.playOnAwake = false;
             _musicSource.loop = true;

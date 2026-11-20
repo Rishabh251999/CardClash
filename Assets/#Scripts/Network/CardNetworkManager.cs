@@ -213,14 +213,10 @@ namespace CardClash
             _gameManager.OnClientConnect();
 
             _loadingManager.OnLoadingComplete += HandleLoadingBarComplete;      
-
-            Debug.Log("CardNetworkManager: Client connected to server.");
         }
 
         private void HandleLoadingBarComplete()
         {
-            Debug.Log("CardNetworkManager: Loading bar complete, switching to lobby screen.");
-
             _loadingManager.OnLoadingComplete -= HandleLoadingBarComplete;
             _uiManager.SetState(ScreenType.Lobby, false);
         }
@@ -231,8 +227,6 @@ namespace CardClash
         /// </summary>
         public override void OnClientDisconnect()
         {
-            Debug.Log("CardNetworkManager: Client disconnected from server.");
-
             StartCoroutine(IE_OnClientDisconnect());
 
             base.OnClientDisconnect();
@@ -261,8 +255,6 @@ namespace CardClash
         /// <param name="message">String message of the error.</param>
         public override void OnClientError(TransportError transportError, string message)
         {
-            Debug.LogError($"CardNetworkManager: Client error - {transportError}: {message}");
-
             StartCoroutine(IE_OnClientDisconnect());
         }
 
@@ -272,8 +264,6 @@ namespace CardClash
         /// <param name="exception">Exception thrown from the Transport.</param>
         public override void OnClientTransportException(Exception exception)
         {
-            Debug.LogError($"CardNetworkManager: Client transport exception - {exception}");
-
             StartCoroutine(IE_OnClientDisconnect());
         }
 

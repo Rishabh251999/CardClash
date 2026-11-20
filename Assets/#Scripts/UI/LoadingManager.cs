@@ -14,13 +14,8 @@ namespace CardClash
         private const float ConnectedProgress = 1.0f;
 
         private const float FakeLoadingDuration = 3.0f;
-        private const float ProgressSpeed = 1.0f / FakeLoadingDuration;
 
         private const float HoldAtFullDuration = 0.5f;
-
-        // Fewer steps with smooth transitions between them.
-        private const int FakeLoadingSteps = 2;
-        private const int ConnectingSteps = 5;
 
         #endregion
 
@@ -80,16 +75,19 @@ namespace CardClash
 
         private void Update()
         {
-            if (Application.isBatchMode ||
-                _loadingSlider == null ||
-                !_startLoading)
+            if (Application.isBatchMode || _loadingSlider == null || !_startLoading)
+                return;
+
+            if (!_fakeLoadingComplete)
             {
+                UpdateFakeLoading(_loadingSlider);
                 return;
             }
 
-            UpdateFakeLoading(_loadingSlider);
+            if (!_isLoadingState)
+                return;
 
-            if (_fakeLoadingComplete && _isLoadingState)
+            if (!_connectionStarted)
                 ConnectToServer();
 
             if (_connectionStarted)
@@ -116,34 +114,12 @@ namespace CardClash
 
             _fakeLoadingTimer += Time.deltaTime;
 
-            float normalizedProgress = Mathf.Clamp01(
-                _fakeLoadingTimer / FakeLoadingDuration
-            );
+            var progress = Mathf.Clamp01(_fakeLoadingTimer / FakeLoadingDuration);
 
-            float stepSize = WaitingProgress / FakeLoadingSteps;
+            slider.fillAmount = Mathf.Lerp(0f, WaitingProgress, progress);
 
-            int currentStep = Mathf.Min(
-                Mathf.FloorToInt(normalizedProgress * FakeLoadingSteps),
-                FakeLoadingSteps
-            );
-
-            float targetProgress = normalizedProgress >= 1f
-                ? WaitingProgress
-                : currentStep * stepSize;
-
-            // Smoothly animate toward each step.
-            slider.fillAmount = Mathf.MoveTowards(
-                slider.fillAmount,
-                targetProgress,
-                ProgressSpeed * Time.deltaTime
-            );
-
-            if (normalizedProgress >= 1f &&
-                slider.fillAmount >= WaitingProgress - 0.001f)
-            {
-                slider.fillAmount = WaitingProgress;
+            if (progress >= 1f)
                 _fakeLoadingComplete = true;
-            }
         }
 
         private void UpdateConnectingProgress(Image slider)
@@ -156,35 +132,15 @@ namespace CardClash
 
             _connectingTimer += Time.deltaTime;
 
-            float normalizedProgress = Mathf.Clamp01(
-                _connectingTimer / FakeLoadingDuration
-            );
+            var progress = Mathf.Clamp01(_connectingTimer / FakeLoadingDuration);
 
-            float remainingProgress = ConnectedProgress - WaitingProgress;
-            float stepSize = remainingProgress / ConnectingSteps;
+            slider.fillAmount = Mathf.Lerp(WaitingProgress,ConnectedProgress, progress);
 
-            int currentStep = Mathf.Min(
-                Mathf.FloorToInt(normalizedProgress * ConnectingSteps),
-                ConnectingSteps
-            );
-
-            float targetProgress = normalizedProgress >= 1f
-                ? ConnectedProgress
-                : WaitingProgress + currentStep * stepSize;
-
-            // Smoothly animate between step targets.
-            slider.fillAmount = Mathf.MoveTowards(
-                slider.fillAmount,
-                targetProgress,
-                ProgressSpeed * Time.deltaTime
-            );
-
-            // Finish only after the client is actually connected.
-            if (NetworkClient.isConnected &&
-                normalizedProgress >= 1f &&
-                slider.fillAmount >= ConnectedProgress - 0.001f)
+            // Complete only when both conditions are satisfied.
+            if (NetworkClient.isConnected && progress >= 1f)
             {
                 slider.fillAmount = ConnectedProgress;
+
                 _reachedFull = true;
                 _fullHoldTimer = 0f;
             }
@@ -213,14 +169,8 @@ namespace CardClash
 
         private void ConnectToServer()
         {
-            if (_connectionStarted ||
-                NetworkClient.isConnected ||
-                NetworkClient.active)
-            {
+            if (_connectionStarted || NetworkClient.isConnected || NetworkClient.active)
                 return;
-            }
-
-            Debug.Log("Connecting to server...");
 
             _connectionStarted = true;
             NetworkManager.singleton.StartClient();
@@ -240,8 +190,22 @@ namespace CardClash
 
         private void HandleScreenOpened(ScreenType screenType)
         {
-            if (screenType is ScreenType.Loading)
-                _startLoading = true;
+            if (screenType != ScreenType.Loading)
+                return;
+
+            _startLoading = true;
+
+            _fakeLoadingComplete = false;
+            _connectionStarted = false;
+            _reachedFull = false;
+            _completionRaised = false;
+
+            _fakeLoadingTimer = 0f;
+            _connectingTimer = 0f;
+            _fullHoldTimer = 0f;
+
+            if (_loadingSlider != null)
+                _loadingSlider.fillAmount = 0f;
         }
 
         #endregion

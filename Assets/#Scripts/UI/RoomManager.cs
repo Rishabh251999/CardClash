@@ -241,13 +241,6 @@ namespace CardClash
             _previousPlayerCount = count;
         }
 
-        private void UpdateMaxCardsPerTurnInteractable(bool isEnabled)
-        {
-            _houseRules._maxCardsPerTurnGroup.interactable = isEnabled;
-            _houseRules._maxCardsPerTurnGroup.blocksRaycasts = isEnabled;
-            _houseRules._maxCardsPerTurnGroup.alpha = isEnabled ? 1f : 0.5f;
-        }
-
         #endregion
 
         #region Client Methods
@@ -316,8 +309,7 @@ namespace CardClash
             _playSameNumberAnimator.SetVisualInstant();
 
             _houseRules._maxCardsPerTurnText.SetText("{0}", (float)maxCardsPerTurn);
-
-            UpdateMaxCardsPerTurnInteractable(playSameNumber);
+            _houseRules._maxCardsPerTurnGameObject.SetActive(playSameNumber);
         }
 
         #endregion
@@ -331,7 +323,7 @@ namespace CardClash
         public Toggle _playSameNumberToggle;
         public TextMeshProUGUI _maxCardsPerTurnText;
 
-        public CanvasGroup _maxCardsPerTurnGroup;
+        public GameObject _maxCardsPerTurnGameObject;
 
         public Sprite _onSprite;
         public Sprite _offSprite;

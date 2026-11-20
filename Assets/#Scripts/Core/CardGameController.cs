@@ -391,8 +391,6 @@ namespace CardClash
         [Server]
         public void StartGame(CardDeck deck, int cardsPerPlayer, bool allowStacking, bool noPowerCardFinish, bool playSameNumber, int maxCardsPerTurn)
         {
-            Debug.Log($"[Server] StartGame — noPowerCardFinish = {noPowerCardFinish}");
-
             _deck = deck;
 
             _cardPerPlayer = cardsPerPlayer;
@@ -446,8 +444,6 @@ namespace CardClash
         private IEnumerator GameTimerRoutine()
         {
             yield return new WaitForSeconds(_gameRules.GameTimeLimit);
-
-            Debug.Log("[Server] Game time limit reached. Ending match.");
 
             EndMatchByTimeout();
         }

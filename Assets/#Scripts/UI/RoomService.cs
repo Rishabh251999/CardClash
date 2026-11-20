@@ -1,8 +1,6 @@
 using Mirror;
 using System;
-using System.Collections.Generic;
 using System.Linq;
-using UnityEngine;
 
 namespace CardClash
 {
@@ -53,7 +51,7 @@ namespace CardClash
                 maxCardsPerTurn = maxCardsPerTurn
             });
 
-            playerInfo.isReady = false;
+            playerInfo.isReady = true;
             playerInfo.isOwner = true;
             playerInfo.roomCode = roomCode;
             playerInfo.avatarId = 1;
@@ -116,7 +114,7 @@ namespace CardClash
             connections.Add(conn);
             _repo.PlayerRooms[conn] = roomCode;
 
-            playerInfo.isReady = false;
+            playerInfo.isReady = true;
             playerInfo.isOwner = false;
             playerInfo.roomCode = roomCode;
             playerInfo.avatarId = connections.Count;

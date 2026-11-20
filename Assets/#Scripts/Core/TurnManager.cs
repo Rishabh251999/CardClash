@@ -178,8 +178,6 @@ namespace CardClash
         {
             if (!_controller.PlayerManager.Registry.Players.TryGetValue(targetNetId, out var entry))
             {
-                Debug.LogWarning($"[Server] ForcePlayerDraw: no connection found for netId {targetNetId}.");
-
                 return;
             }
 
@@ -277,8 +275,6 @@ namespace CardClash
 
             if (!_controller.Deck.TryDraw(out GameCard drawnCard))
             {
-                Debug.LogWarning("[Server] Draw pile empty.");
-
                 return;
             }
 
@@ -334,8 +330,6 @@ namespace CardClash
 
             _controller.PlayerManager.Registry.ClearLastDrawnCardId(netId);
             _playersWhoDrewThisTurn.Remove(netId);
-
-            Debug.Log("[Server] Player passed after drawing.");
 
             AdvanceTurn();
         }

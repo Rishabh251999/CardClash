@@ -21,17 +21,13 @@ namespace CardClash
 
         internal void HandlePlayerCard(NetworkConnectionToClient conn, GameCard card, CardColor chosenWildColor, bool applyEffect = true)
         {
-            Debug.Log($"[Server] HandlePlayerCard called: card={card}, conn={conn.identity.netId}");
-
             if (_controller.MatchEnded)
             {
-                Debug.Log("[Server] Rejected: match already ended.");
                 return;
             }
 
             if (!_controller.TurnManager.IsValidPlayerAction(conn))
             {
-                Debug.Log("[Server] Rejected: not a valid player action (not your turn or invalid conn).");
                 return;
             }
 
@@ -39,12 +35,6 @@ namespace CardClash
 
             if (!IsPlayableAgainstTop(card))
             {
-                Debug.Log($"[Server] Rejected: {card} not playable against top " +
-                    $"(pendingDrawCount={_controller.PendingDraw.Count}, pendingDrawType={_controller.PendingDraw.Type}, " +
-                    $"topDiscard={_controller.Deck.TopDiscard})");
-
-                Debug.LogWarning($"[Server] Rejected illegal play " + $"from netId {netId}: {card}");
-
                 conn.Send(new ClientDeckMessage
                 {
                     clientDeckOperation = ClientDeckOperation.Error,
@@ -55,16 +45,8 @@ namespace CardClash
                 return;
             }
 
-            if (_controller.PlayerData[netId].cardCount == 1)
-            {
-                Debug.Log($"[Server] Checking finish rule: noPowerCardFinish={_controller.NoPowerCardFinish}, " +
-                    $"cardCount={_controller.PlayerData[netId].cardCount}, cardType={card.Type}, isPower={IsPowerCard(card.Type)}");
-            }
-
             if (_controller.NoPowerCardFinish && _controller.PlayerData[netId].cardCount == 1 && IsPowerCard(card.Type))
             {
-                Debug.LogWarning($"[Server] Rejected finishing play " + $"from netId {netId}: {card} cannot be the last card.");
-
                 conn.Send(new ClientDeckMessage
                 {
                     clientDeckOperation = ClientDeckOperation.Error,
@@ -79,8 +61,6 @@ namespace CardClash
             {
                 if (chosenWildColor is CardColor.None)
                 {
-                    Debug.LogWarning($"[Server] Rejected wild play " + $"from netId {netId}: no color chosen.");
-
                     conn.Send(new ClientDeckMessage
                     {
                         clientDeckOperation = ClientDeckOperation.Error,
@@ -109,8 +89,6 @@ namespace CardClash
 
             if (!TryRemoveFromHand(netId, card))
             {
-                Debug.LogWarning($"[Server] Rejected play from netId " + $"${netId}: card {card} not found " + $"in tracked hand.");
-
                 conn.Send(new ClientDeckMessage
                 {
                     clientDeckOperation = ClientDeckOperation.Error,
@@ -306,8 +284,6 @@ namespace CardClash
 
         private void PenalizeMissedLastCardCall(uint netId)
         {
-            Debug.Log($"[Server] netId {netId} failed to call LAST CARD. Applying penalty draw.");
-
             _controller.TurnManager.ForcePlayerDraw(netId, _controller.GameRules.MissedLastCardPenalty, true);
 
             _controller.TurnManager.ResetLastCardCall(netId);
