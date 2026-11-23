@@ -67,7 +67,7 @@ namespace CardClash
             _settings.UserName = _pendingUserName;
             _settings.Save();
 
-            _uiManager.SetState(ScreenType.Loading, false);
+            _uiManager.SetState(ScreenType.Instructions, false);
         }
 
         //private void TryConnect()

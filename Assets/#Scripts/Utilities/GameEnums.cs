@@ -71,6 +71,7 @@ namespace CardClash
         Loading,
         RoomInfo,
         HouseRules,
+        Instructions,
         ConnectionError,
     }
 

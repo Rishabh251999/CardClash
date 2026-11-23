@@ -17,6 +17,9 @@ namespace CardClash
         [Header("Vibration")]
         public bool VibrationEnabled = true;
 
+        [Header("Tutorial")]
+        public bool HasSeenInstruction = false;
+
         private string FilePath => Path.Combine(Application.persistentDataPath, "settings.json");
 
         private void ResetToDefaults()
@@ -25,6 +28,7 @@ namespace CardClash
             MusicEnabled = true;
             SoundEnabled = true;
             VibrationEnabled = true;
+            HasSeenInstruction = false;
         }
 
         public void Load()

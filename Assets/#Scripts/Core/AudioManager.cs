@@ -35,7 +35,6 @@ namespace CardClash
             }
 
             Instance = this;
-            DontDestroyOnLoad(gameObject);
 
             if (Application.isBatchMode)
                 return;
