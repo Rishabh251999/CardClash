@@ -31,6 +31,7 @@ namespace CardClash
         #region Runtime State
 
         public ScreenType ScreenType { get; private set; }
+        public ScreenType PreviousScreenType { get; private set; }
 
         public event Action<ScreenType> OnStateChanged;
         public event Action<ScreenType> OnScreenOpened;
@@ -65,6 +66,9 @@ namespace CardClash
 
         public void SetState(ScreenType state, bool instant = false)
         {
+            if (ScreenType != state)
+                PreviousScreenType = ScreenType;
+
             ScreenType = state;
 
             foreach (var entry in _panels)

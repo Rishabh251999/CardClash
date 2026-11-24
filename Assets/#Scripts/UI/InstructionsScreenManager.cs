@@ -1,9 +1,9 @@
 using System;
-using DG.Tweening;
 using TMPro;
+using DG.Tweening;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 
 namespace CardClash
 {
@@ -35,13 +35,7 @@ namespace CardClash
         #region Runtime Collections
 
         [Space(5)]
-        [SerializeField] private InstructionsScreenData[] _view;
-
-        [Space(2.5f)]
-        [SerializeField] private Image[] _pageDots;
-
-        [Space(2.5f)]
-        [SerializeField] private CanvasGroup[] _screens;
+        [SerializeField] private InstructionsScreenData[] _instructionScreens;
 
         [Space(2.5f)]
         [SerializeField] private RectTransform _viewport;
@@ -53,8 +47,10 @@ namespace CardClash
 
         #region GameObject References
 
+        [Space(5f)]
         [SerializeField] private GameObject _backButtonGameObject;
         [SerializeField] private GameObject _skipButtonGameObject;
+        [SerializeField] private GameObject _letsPlayButtonGameObject;
 
         #endregion
 
@@ -63,7 +59,7 @@ namespace CardClash
         [Header("Animation Settings")]
         [SerializeField] private float _animationDuration = 0.3f;
         [SerializeField, Range(0.1f, 0.5f)]
-        private float _swipeThreshold = 0.25f;
+        private float _swipeThreshold = 0.12f;
 
         [SerializeField] private Ease _animationEase = Ease.OutCubic;
 
@@ -73,6 +69,7 @@ namespace CardClash
 
         private int _currentScreen;
         private int _targetScreen = -1;
+        private int _previewedScreen = -1;
 
         private bool _isDragging;
         private bool _isAnimating;
@@ -86,9 +83,11 @@ namespace CardClash
 
         private Button _backButton;
         private Button _skipButton;
+        private Button _letsPlayButton;
 
         private CanvasGroup _backButtonCanvasGroup;
         private CanvasGroup _skipButtonCanvasGroup;
+        private CanvasGroup _letsPlayButtonCanvasGroup;
 
 
         #endregion
@@ -97,48 +96,55 @@ namespace CardClash
 
         private void Awake()
         {
-            int screenCount = _screens.Length;
+            var screenCount = _instructionScreens.Length;
 
             _screenTransforms = new RectTransform[screenCount];
             _screenPositions = new Vector2[screenCount];
 
-            for (int i = 0; i < screenCount; i++)
-            {
-                _screenTransforms[i] = _screens[i].GetComponent<RectTransform>();
+             for (int i = 0; i < screenCount; i++)
+    {
+        var screen = _instructionScreens[i].screen;
 
-                _screenPositions[i] = _screenTransforms[i].anchoredPosition;
-            }
+        _screenTransforms[i] = screen.GetComponent<RectTransform>();
+        _screenPositions[i] = _screenTransforms[i].anchoredPosition;
+    }
 
             _backButtonCanvasGroup = _backButtonGameObject.GetComponent<CanvasGroup>();
             _skipButtonCanvasGroup = _skipButtonGameObject.GetComponent<CanvasGroup>();
+            _letsPlayButtonCanvasGroup = _letsPlayButtonGameObject.GetComponent<CanvasGroup>();
 
             _backButton = _backButtonGameObject.GetComponent<Button>();
             _skipButton = _skipButtonGameObject.GetComponent<Button>();
+            _letsPlayButton = _letsPlayButtonGameObject.GetComponent<Button>();
 
             _screenWidth = _viewport.rect.width;
         }
 
         private void Start()
         {
+            _uiManager.OnStateChanged += OnScreenChanged;
+
             _backButton.AddListenerSafe(OnClickBackButton);
             _skipButton.AddListenerSafe(OnClickSkipButton);
-
-            _uiManager.OnStateChanged += OnScreenChanged;
+            _letsPlayButton.AddListenerSafe(OnClickSkipButton);
 
             ShowScreen(0);
         }
 
-        private void OnDisable()
+        private void OnDestroy()
         {
             _backButton.RemoveListenerSafe(OnClickBackButton);
             _skipButton.RemoveListenerSafe(OnClickSkipButton);
+            _letsPlayButton.RemoveListenerSafe(OnClickSkipButton);
 
             _uiManager.OnStateChanged -= OnScreenChanged;
 
             _screenSequence?.Kill();
+            _screenSequence = null;
 
             _isDragging = false;
             _isAnimating = false;
+            _targetScreen = -1;
 
             if (_screenTransforms != null)
                 ShowScreen(_currentScreen);
@@ -150,17 +156,24 @@ namespace CardClash
 
         private void OnScreenChanged(ScreenType screenType)
         {
-            var (showBack, showSkip) = screenType switch
-            {
-                ScreenType.Login => (false, true),
-                ScreenType.Settings => (true, false),
-                _ => (false, false)
-            };
+            if (screenType != ScreenType.Instructions)
+                return;
 
-            Debug.Log($"Screen opened: {screenType}. Show Back: {showBack}, Show Skip: {showSkip}");    
+            UpdateNavigationButtons();
+        }
+
+        private void UpdateNavigationButtons()
+        {
+            var isLastScreen = _currentScreen == _instructionScreens.Length - 1;
+            var loginScreen = _uiManager.PreviousScreenType == ScreenType.Login;
+
+            var showBack = _uiManager.PreviousScreenType == ScreenType.Settings;
+            var showSkip = loginScreen && !isLastScreen;
+            var showLetsPlay = loginScreen && isLastScreen;
 
             SetCanvasGroup(_backButtonCanvasGroup, showBack);
             SetCanvasGroup(_skipButtonCanvasGroup, showSkip);
+            SetCanvasGroup(_letsPlayButtonCanvasGroup, showLetsPlay);
         }
 
         private void SetCanvasGroup(CanvasGroup canvasGroup, bool isVisible)
@@ -176,24 +189,44 @@ namespace CardClash
 
         private void ShowScreen(int index)
         {
-            if (index < 0 || index >= _screens.Length || index >= _view.Length)
+            if (index < 0 || index >= _instructionScreens.Length)
                 return;
 
             _currentScreen = index;
 
-            for (var i = 0; i < _screens.Length; i++)
+            for (var i = 0; i < _instructionScreens.Length; i++)
             {
                 var isActive = i == index;
+                var screen = _instructionScreens[i].screen;
 
-                _screens[i].alpha = isActive ? 1f : 0f;
-                _screens[i].interactable = isActive;
-                _screens[i].blocksRaycasts = isActive;
+                SetCanvasGroup(screen, isActive);
 
                 _screenTransforms[i].anchoredPosition = _screenPositions[i];
             }
 
             UpdateScreenContent();
             UpdatePageDots();
+        }
+
+        private void UpdatePreviewContent(int index)
+        {
+            var screenData = _instructionScreens[index];
+
+            _titleText.text = screenData.title;
+            _description1Text.text = screenData.description1;
+            _description2Text.text = screenData.description2;
+
+            for (int i = 0; i < _instructionScreens.Length; i++)
+            {
+                var pageDot = _instructionScreens[i].pageDot;
+
+                if (pageDot == null)
+                    continue;
+
+                pageDot.sprite = i == index
+                    ? _dotOnSprite
+                    : _dotOffSprite;
+            }
         }
 
         #endregion
@@ -206,8 +239,8 @@ namespace CardClash
             if (_isAnimating)
                 return;
 
-            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(_viewport, eventData.position,eventData.pressEventCamera,
-                out _pointerDownPosition))
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(_viewport, eventData.position,
+                eventData.pressEventCamera, out _pointerDownPosition))
                 return;
 
             _isDragging = true;
@@ -222,60 +255,57 @@ namespace CardClash
             if (!_isDragging || _isAnimating)
                 return;
 
-            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(_viewport, eventData.position, eventData.pressEventCamera,
-                out Vector2 currentPosition))
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(_viewport, eventData.position, 
+                eventData.pressEventCamera, out Vector2 currentPosition))
                 return;
 
             _dragDistance = currentPosition.x - _pointerDownPosition.x;
 
             var nextIndex = _dragDistance < 0 ? _currentScreen + 1 : _currentScreen - 1;
 
-            RectTransform current =
-                _screenTransforms[_currentScreen];
+            var current = _screenTransforms[_currentScreen];
 
-            Vector2 currentBase =
-                _screenPositions[_currentScreen];
+            var currentBase = _screenPositions[_currentScreen];
 
-            // First / Last screen resistance
-            if (nextIndex < 0 || nextIndex >= _screens.Length)
+            if (nextIndex < 0 || nextIndex >= _instructionScreens.Length)
             {
                 _targetScreen = -1;
 
-                current.anchoredPosition =
-                    currentBase +
-                    Vector2.right * (_dragDistance * 0.25f);
+                current.anchoredPosition = currentBase + Vector2.right * (_dragDistance * 0.25f);
 
                 return;
             }
 
             _targetScreen = nextIndex;
 
-            RectTransform next =
-                _screenTransforms[nextIndex];
+            var dragProgress = Mathf.Abs(_dragDistance) / _screenWidth;
 
-            Vector2 nextBase =
-                _screenPositions[nextIndex];
+            int previewIndex = dragProgress >= 0.5f
+                ? nextIndex
+                : _currentScreen;
 
-            float distance = Mathf.Clamp(
-                _dragDistance,
-                -_screenWidth,
-                _screenWidth
-            );
+            if (_previewedScreen != previewIndex)
+            {
+                UpdatePreviewContent(previewIndex);
+                _previewedScreen = previewIndex;
+            }
 
-            float direction = Mathf.Sign(distance);
+            var next = _screenTransforms[nextIndex];
+
+            var nextBase = _screenPositions[nextIndex];
+
+            var distance = Mathf.Clamp(_dragDistance, -_screenWidth, _screenWidth);
+            var direction = Mathf.Sign(distance);
 
             // Current screen follows finger
-            current.anchoredPosition =
-                currentBase + Vector2.right * distance;
+            current.anchoredPosition = currentBase + Vector2.right * distance;
 
             // Incoming screen follows from opposite side
-            next.anchoredPosition =
-                nextBase +
-                Vector2.right * (distance - direction * _screenWidth);
+            next.anchoredPosition = nextBase + Vector2.right * (distance - direction * _screenWidth);
 
-            _screens[nextIndex].alpha = 1f;
-            _screens[nextIndex].interactable = false;
-            _screens[nextIndex].blocksRaycasts = false;
+            _instructionScreens[nextIndex].screen.alpha = 1f;
+            _instructionScreens[nextIndex].screen.interactable = false;
+            _instructionScreens[nextIndex].screen.blocksRaycasts = false;
         }
 
         public void OnEndDrag(PointerEventData eventData)
@@ -287,8 +317,7 @@ namespace CardClash
 
             float threshold = _screenWidth * _swipeThreshold;
 
-            if (_targetScreen >= 0 &&
-                Mathf.Abs(_dragDistance) >= threshold)
+            if (_targetScreen >= 0 &&  Mathf.Abs(_dragDistance) >= threshold)
             {
                 AnimateScreen(_targetScreen);
             }
@@ -305,67 +334,61 @@ namespace CardClash
 
         private void AnimateScreen(int nextIndex)
         {
-            if (_isAnimating ||
-                nextIndex < 0 ||
-                nextIndex >= _screens.Length ||
-                nextIndex >= _view.Length)
+            if (_isAnimating || nextIndex < 0 || nextIndex >= _instructionScreens.Length)
                 return;
 
             _isAnimating = true;
 
-            int previousIndex = _currentScreen;
+            var previousIndex = _currentScreen;
 
-            RectTransform current =
-                _screenTransforms[previousIndex];
+            var current = _screenTransforms[previousIndex];
+            var next = _screenTransforms[nextIndex];
 
-            RectTransform next =
-                _screenTransforms[nextIndex];
+            var currentPosition = _screenPositions[previousIndex];
+            var nextPosition = _screenPositions[nextIndex];
 
-            Vector2 currentPosition =
-                _screenPositions[previousIndex];
-
-            Vector2 nextPosition =
-                _screenPositions[nextIndex];
-
-            float direction = nextIndex > previousIndex ? -1f : 1f;
+            var direction = nextIndex > previousIndex ? -1f : 1f;
 
             // Prepare incoming screen if this is button navigation
-            if (_screens[nextIndex].alpha == 0f)
-            {
-                next.anchoredPosition =
-                    nextPosition +
-                    Vector2.right * -direction * _screenWidth;
-            }
+            if (_instructionScreens[nextIndex].screen.alpha == 0f)
+                next.anchoredPosition = nextPosition + _screenWidth * -direction * Vector2.right;
 
-            _screens[nextIndex].alpha = 1f;
-            _screens[nextIndex].interactable = false;
-            _screens[nextIndex].blocksRaycasts = false;
+            _instructionScreens[nextIndex].screen.alpha = 1f;
+            _instructionScreens[nextIndex].screen.interactable = false;
+            _instructionScreens[nextIndex].screen.blocksRaycasts = false;
 
-            _screens[previousIndex].interactable = false;
-            _screens[previousIndex].blocksRaycasts = false;
+            _instructionScreens[previousIndex].screen.interactable = false;
+            _instructionScreens[previousIndex].screen.blocksRaycasts = false;
 
             _screenSequence = DOTween.Sequence();
 
-            _screenSequence.Join(
-                current.DOAnchorPos(
-                    currentPosition +
-                    _screenWidth * direction * Vector2.right,
-                    _animationDuration
-                )
-            );
+            _screenSequence.Join(current.DOAnchorPos(currentPosition + _screenWidth * direction * Vector2.right, 
+                _animationDuration));
 
-            _screenSequence.Join(
-                next.DOAnchorPos(
-                    nextPosition,
-                    _animationDuration
-                )
-            );
+            _screenSequence.Join(next.DOAnchorPos(nextPosition,_animationDuration));
 
             _screenSequence.SetEase(_animationEase);
 
+            var hasUpdatedContent = false;
+
+            _screenSequence.OnUpdate(() =>
+            {
+                float progress = _screenSequence.ElapsedPercentage(false);
+
+                if (!hasUpdatedContent && progress >= 0.5f)
+                {
+                    hasUpdatedContent = true;
+
+                    _currentScreen = nextIndex;
+
+                    UpdateScreenContent();
+                    UpdatePageDots();
+                }
+            });
+
             _screenSequence.OnComplete(() =>
             {
-                _screens[previousIndex].alpha = 0f;
+                _instructionScreens[previousIndex].screen.alpha = 0f;
 
                 current.anchoredPosition = currentPosition;
 
@@ -373,11 +396,8 @@ namespace CardClash
 
                 _targetScreen = -1;
 
-                UpdateScreenContent();
-                UpdatePageDots();
-
-                _screens[nextIndex].interactable = true;
-                _screens[nextIndex].blocksRaycasts = true;
+                _instructionScreens[nextIndex].screen.interactable = true;
+                _instructionScreens[nextIndex].screen.blocksRaycasts = true;
 
                 _isAnimating = false;
             });
@@ -387,34 +407,20 @@ namespace CardClash
         {
             _isAnimating = true;
 
-            int currentIndex = _currentScreen;
+            var currentIndex = _currentScreen;
 
-            RectTransform current =
-                _screenTransforms[currentIndex];
+            var current = _screenTransforms[currentIndex];
 
             _screenSequence = DOTween.Sequence();
 
-            _screenSequence.Join(
-                current.DOAnchorPos(
-                    _screenPositions[currentIndex],
-                    _animationDuration
-                )
-            );
+            _screenSequence.Join(current.DOAnchorPos(_screenPositions[currentIndex],_animationDuration));
 
             if (_targetScreen >= 0)
             {
                 int nextIndex = _targetScreen;
 
-                _screenSequence.Join(
-                    _screenTransforms[nextIndex].DOAnchorPos(
-                        _screenPositions[nextIndex] +
-                        Vector2.right *
-                        (_dragDistance < 0
-                            ? _screenWidth
-                            : -_screenWidth),
-                        _animationDuration
-                    )
-                );
+                _screenSequence.Join(_screenTransforms[nextIndex].DOAnchorPos(_screenPositions[nextIndex] + Vector2.right * 
+                    (_dragDistance < 0? _screenWidth: -_screenWidth),_animationDuration));
             }
 
             _screenSequence.SetEase(_animationEase);
@@ -423,11 +429,13 @@ namespace CardClash
             {
                 if (_targetScreen >= 0)
                 {
-                    _screens[_targetScreen].alpha = 0f;
+                    _instructionScreens[_targetScreen].screen.alpha = 0f;
 
-                    _screenTransforms[_targetScreen].anchoredPosition =
-                        _screenPositions[_targetScreen];
+                    _screenTransforms[_targetScreen].anchoredPosition = _screenPositions[_targetScreen];
                 }
+
+                UpdatePreviewContent(_currentScreen);
+                _previewedScreen = _currentScreen;
 
                 _targetScreen = -1;
                 _isAnimating = false;
@@ -441,23 +449,25 @@ namespace CardClash
 
         private void UpdateScreenContent()
         {
-            _titleText.text = _view[_currentScreen].title;
+            var screenData = _instructionScreens[_currentScreen];
 
-            _description1Text.text =
-                _view[_currentScreen].description1;
+            _titleText.text = screenData.title;
+            _description1Text.text = screenData.description1;
+            _description2Text.text = screenData.description2;
 
-            _description2Text.text =
-                _view[_currentScreen].description2;
+            UpdateNavigationButtons();
         }
 
         private void UpdatePageDots()
         {
-            for (int i = 0; i < _pageDots.Length; i++)
+            for (int i = 0; i < _instructionScreens.Length; i++)
             {
-                _pageDots[i].sprite =
-                    i == _currentScreen
-                    ? _dotOnSprite
-                    : _dotOffSprite;
+                var pageDot = _instructionScreens[i].pageDot;
+
+                if (pageDot == null)
+                    continue;
+
+                pageDot.sprite = i == _currentScreen ? _dotOnSprite : _dotOffSprite;
             }
         }
 
@@ -470,5 +480,8 @@ namespace CardClash
         public string title;
         public string description1;
         public string description2;
+
+        public CanvasGroup screen;
+        public Image pageDot;
     }
 }

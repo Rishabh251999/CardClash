@@ -44,6 +44,7 @@ namespace CardClash
         [SerializeField] private Button _editButton;
         [SerializeField] private Button _backButton;
         [SerializeField] private Button _saveButton;
+        [SerializeField] private Button _instructionsButton;
 
         #endregion
 
@@ -92,6 +93,7 @@ namespace CardClash
             _backButton.AddListenerSafe(OnBackButtonClick);
             _saveButton.AddListenerSafe(OnSaveButtonClick);
             _editButton.AddListenerSafe(OnEditButtonClick);
+            _instructionsButton.AddListenerSafe(OnInstructionsButtonClick);
 
             _usernameInputField.AddListenerSafe(OnUsernameValueChanged);
 
@@ -107,6 +109,7 @@ namespace CardClash
             _backButton.RemoveListenerSafe(OnBackButtonClick);
             _saveButton.RemoveListenerSafe(OnSaveButtonClick);
             _editButton.RemoveListenerSafe(OnEditButtonClick);
+            _instructionsButton.RemoveListenerSafe(OnInstructionsButtonClick);
 
             _usernameInputField.RemoveListenerSafe(OnUsernameValueChanged);
 
@@ -262,6 +265,8 @@ namespace CardClash
                 _usernameInputField.caretPosition = _usernameInputField.text.Length;
             }
         }
+
+        private void OnInstructionsButtonClick() => _uiManager.SetState(ScreenType.Instructions, false);
 
         #endregion
     }

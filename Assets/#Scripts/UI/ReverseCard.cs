@@ -38,7 +38,7 @@ namespace CardClash
             _image = GetComponent<Image>();
         }
 
-        private void OnDisable()
+        private void OnDestroy()
         {
             StopRotating();
         }

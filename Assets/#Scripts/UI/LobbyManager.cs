@@ -4,7 +4,6 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
-using static UnityEngine.CullingGroup;
 
 namespace CardClash
 {
@@ -80,8 +79,6 @@ namespace CardClash
 
             foreach (var roomInfo in openRooms.Values)
             {
-                Debug.Log($"Room: {roomInfo.roomCode} | Players: {roomInfo.playerCount}/{roomInfo.maxPlayers}");
-
                 var roomUIElement = Instantiate(_roomPrefab, _matchList.transform);
                 roomUIElement.transform.SetParent(_matchList.transform, false);
 

@@ -122,8 +122,17 @@ namespace CardClash
                 _fakeLoadingComplete = true;
         }
 
+
         private void UpdateConnectingProgress(Image slider)
         {
+            // Do not increase progress until connected.
+            if (!NetworkClient.isConnected)
+            {
+                // Keep the bar at 30% while waiting.
+                slider.fillAmount = WaitingProgress;
+                return;
+            }
+
             if (_reachedFull)
             {
                 UpdateFullHold();
@@ -134,10 +143,13 @@ namespace CardClash
 
             var progress = Mathf.Clamp01(_connectingTimer / FakeLoadingDuration);
 
-            slider.fillAmount = Mathf.Lerp(WaitingProgress,ConnectedProgress, progress);
+            slider.fillAmount = Mathf.Lerp(
+                WaitingProgress,
+                ConnectedProgress,
+                progress
+            );
 
-            // Complete only when both conditions are satisfied.
-            if (NetworkClient.isConnected && progress >= 1f)
+            if (progress >= 1f)
             {
                 slider.fillAmount = ConnectedProgress;
 
@@ -145,6 +157,7 @@ namespace CardClash
                 _fullHoldTimer = 0f;
             }
         }
+
 
         private void UpdateFullHold()
         {
