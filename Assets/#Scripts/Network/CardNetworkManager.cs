@@ -19,8 +19,12 @@ namespace CardClash
 
         [SerializeField] private UIManager _uiManager;
         [SerializeField] private LoadingManager _loadingManager;
+        [SerializeField] private ConnectionErrorManager _connectionErrorManager;
 
         public GameManager _gameManager;
+
+        private bool _hasConnectedToServer;
+        private bool _isHandlingClientDisconnect;
 
         /// <summary>
         /// Runs on both Server and Client
@@ -208,11 +212,15 @@ namespace CardClash
         /// </summary>
         public override void OnClientConnect()
         {
+            _hasConnectedToServer = true;
+            _isHandlingClientDisconnect = false;
+
             base.OnClientConnect();
 
             _gameManager.OnClientConnect();
 
-            _loadingManager.OnLoadingComplete += HandleLoadingBarComplete;      
+            _loadingManager.OnLoadingComplete -= HandleLoadingBarComplete;
+            _loadingManager.OnLoadingComplete += HandleLoadingBarComplete;
         }
 
         private void HandleLoadingBarComplete()
@@ -227,12 +235,49 @@ namespace CardClash
         /// </summary>
         public override void OnClientDisconnect()
         {
-            StartCoroutine(IE_OnClientDisconnect());
-
             base.OnClientDisconnect();
+
+            HandleClientDisconnect();
         }
 
-        private IEnumerator IE_OnClientDisconnect()
+        public void HandleConnectionTimeout()
+        {
+            if (_isHandlingClientDisconnect) return;
+
+            _isHandlingClientDisconnect = true;
+
+            if (NetworkClient.active)
+                StopClient();
+
+            StartCoroutine(IE_OnClientDisconnect(ConnectionErrorType.ConnectionTimeout));
+        }
+
+        private void HandleClientDisconnect()
+        {
+            if (_isHandlingClientDisconnect)
+                return;
+
+            _isHandlingClientDisconnect = true;
+
+            var errorType = GetDisconnectErrorType();
+
+            Debug.Log($"Client disconnected from server. Error type: {errorType}");
+
+            StartCoroutine(IE_OnClientDisconnect(errorType));
+        }
+
+        private ConnectionErrorType GetDisconnectErrorType()
+        {
+            if (_hasConnectedToServer)
+                return ConnectionErrorType.ConnectionLost;
+
+            if (Application.internetReachability is NetworkReachability.NotReachable)
+                return ConnectionErrorType.NoInternet;
+
+            return ConnectionErrorType.ServerUnavailable;
+        }
+
+        private IEnumerator IE_OnClientDisconnect(ConnectionErrorType errorType)
         {
             yield return _waitForSeconds0_75;
 
@@ -240,6 +285,8 @@ namespace CardClash
 
             _uiManager.enabled = true;
             _uiManager.SetState(ScreenType.ConnectionError, instant: true);
+
+            _connectionErrorManager.ShowError(errorType);
         }
 
         /// <summary>
@@ -255,7 +302,7 @@ namespace CardClash
         /// <param name="message">String message of the error.</param>
         public override void OnClientError(TransportError transportError, string message)
         {
-            StartCoroutine(IE_OnClientDisconnect());
+            HandleClientDisconnect();
         }
 
         /// <summary>
@@ -264,7 +311,7 @@ namespace CardClash
         /// <param name="exception">Exception thrown from the Transport.</param>
         public override void OnClientTransportException(Exception exception)
         {
-            StartCoroutine(IE_OnClientDisconnect());
+            HandleClientDisconnect();
         }
 
         #endregion
@@ -295,6 +342,9 @@ namespace CardClash
         /// </summary>
         public override void OnStartClient()
         {
+            _hasConnectedToServer = false;
+            _isHandlingClientDisconnect = false;
+
             _gameManager.OnStartClient();
         }
 

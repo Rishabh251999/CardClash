@@ -1,10 +1,45 @@
 namespace CardClash
 {
     #region Enums
+    public enum ScreenType
+    {
+        Room,
+        Game,
+        Login,
+        Lobby,
+        Settings,
+        Loading,
+        RoomInfo,
+        HouseRules,
+        Instructions,
+        ConnectionError,
+    }
 
-    /// <summary>
-    /// Operations the server can perform on rooms
-    /// </summary>
+    public enum NotificationType
+    {
+        Red,
+        Blue,
+        Green,
+        Yellow,
+        LastCard
+    }
+
+    public enum HouseRulePreset
+    {
+        Classic,
+        Fast,
+        Chaos,
+        Custom
+    }
+
+    public enum ConnectionErrorType
+    {
+        NoInternet,
+        ConnectionLost,
+        ConnectionTimeout,
+        ServerUnavailable
+    }
+
     public enum ServerRoomOperation : byte
     {
         None,
@@ -28,9 +63,6 @@ namespace CardClash
         PlayMultipleCards = 6,
     }
 
-    /// <summary>
-    /// Operations the client receives about rooms
-    /// </summary>
     public enum ClientRoomOperation : byte
     {
         None,
@@ -59,37 +91,6 @@ namespace CardClash
         PlayerQuit = 8,
         LastCardCalled = 9,   
         LastCardPenalty = 10,
-    }
-
-    public enum ScreenType
-    {
-        Room,
-        Game,
-        Login,
-        Lobby,
-        Settings,
-        Loading,
-        RoomInfo,
-        HouseRules,
-        Instructions,
-        ConnectionError,
-    }
-
-    public enum NotificationType
-    {
-        Red, 
-        Blue,
-        Green,
-        Yellow,
-        LastCard
-    }
-
-    public enum HouseRulePreset
-    {
-        Classic,
-        Fast,
-        Chaos,
-        Custom
     }
 
     #endregion

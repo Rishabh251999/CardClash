@@ -1,5 +1,7 @@
 using Mirror;
+using System;
 using System.Collections;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -23,6 +25,18 @@ namespace CardClash
 
         [Header("UI References")]
         [SerializeField] private Button _retryButton;
+        [Space(2.5f)]
+        [SerializeField] private Image _errorIconImage;
+        [Space(2.5f)]
+        [SerializeField] private TextMeshProUGUI _errorTitleText;
+        [SerializeField] private TextMeshProUGUI _errorMessage1Text;
+        [SerializeField] private TextMeshProUGUI _errorMessage2Text;
+
+        #endregion
+
+        #region Runtime Collections
+
+        [SerializeField] private ConnectionErrorData[] _connectionErrorData;
 
         #endregion
 
@@ -47,6 +61,12 @@ namespace CardClash
         #endregion
 
         #region Unity Lifecycle
+
+        private void Awake()
+        {
+            _errorIconImage.sprite = null;
+            _errorIconImage.color = new(1, 1, 1, 0);
+        }
 
         private void Start()
         {
@@ -82,6 +102,26 @@ namespace CardClash
                 StopCoroutine(_spinnerCoroutine);
                 _spinnerCoroutine = null;
             }
+        }
+
+        public void ShowError(ConnectionErrorType connectionErrorType)
+        {
+            var errorData = Array.Find(_connectionErrorData, 
+                data => data.ConnectionErrorType == connectionErrorType);
+
+            SetError(errorData.Icon, errorData.Title, errorData.Message1, errorData.Message2);
+        }
+
+        private void SetError(Sprite icon, string title, string message1, string message2)
+        {
+            if (_errorIconImage.color.a == 0f)
+                _errorIconImage.color = new(1, 1, 1, 1);
+
+            _errorIconImage.sprite = icon;
+
+            _errorTitleText.text = title;
+            _errorMessage1Text.text = message1;
+            _errorMessage2Text.text = message2;
         }
 
         private IEnumerator IE_RetryConnection()
@@ -138,4 +178,17 @@ namespace CardClash
 
         #endregion
     }
+
+    [Serializable]
+    public struct ConnectionErrorData
+    {
+        public ConnectionErrorType ConnectionErrorType;
+
+        public Sprite Icon;
+
+        public string Title;
+        public string Message1;
+        public string Message2;
+    }
+
 }
