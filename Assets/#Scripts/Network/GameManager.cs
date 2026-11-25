@@ -19,6 +19,7 @@ namespace CardClash
         [SerializeField] private RoomManager _roomManager;
         [SerializeField] private UIManager _uiManager;
         [SerializeField] private DeckRulesSO _deckRules;
+        [SerializeField] private SettingsSO _settings;
 
         #endregion
 
@@ -69,7 +70,7 @@ namespace CardClash
 
             _roomNavigationController = new(_clientRepo, _uiManager, _lobbyManager);
             _clientMessageHandler = new(_clientRepo, _roomManager, _uiManager, _lobbyManager, _roomNavigationController);
-            _clientConnectionHandler = new(_clientRepo, _lobbyManager, _clientMessageHandler);
+            _clientConnectionHandler = new(_clientRepo, _lobbyManager, _clientMessageHandler, _settings);
         }
 
         private void SetMaxRefreshRate()

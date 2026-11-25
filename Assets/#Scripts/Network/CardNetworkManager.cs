@@ -24,6 +24,7 @@ namespace CardClash
         public GameManager _gameManager;
 
         private bool _hasConnectedToServer;
+        private bool _isApplicationQuitting;
         private bool _isHandlingClientDisconnect;
 
         /// <summary>
@@ -85,6 +86,7 @@ namespace CardClash
         /// </summary>
         public override void OnApplicationQuit()
         {
+            _isApplicationQuitting = true;
             base.OnApplicationQuit();
         }
 
@@ -242,7 +244,7 @@ namespace CardClash
 
         public void HandleConnectionTimeout()
         {
-            if (_isHandlingClientDisconnect) return;
+            if (_isApplicationQuitting || _isHandlingClientDisconnect) return;
 
             _isHandlingClientDisconnect = true;
 

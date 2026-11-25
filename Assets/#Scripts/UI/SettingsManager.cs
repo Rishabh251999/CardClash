@@ -1,3 +1,4 @@
+using Mirror;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -250,6 +251,16 @@ namespace CardClash
             _userSettings.VibrationEnabled = _vibrationToggle.toggle.isOn;
 
             _userSettings.Save();
+
+            if (NetworkClient.isConnected)
+            {
+                var sessionId = PlayerPrefs.GetString("SessionId", string.Empty);
+                NetworkClient.Send(new SetPlayerInfoMessage
+                {
+                    Username = username,
+                    SessionId = sessionId
+                });
+            }
 
             CacheOriginalValues();
             RefreshSaveButton();
