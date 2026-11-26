@@ -21000,10 +21000,10 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1728180428}
-  - component: {fileID: 1728180430}
   - component: {fileID: 1728180429}
   - component: {fileID: 1728180431}
   - component: {fileID: 1728180432}
+  - component: {fileID: 1728180430}
   m_Layer: 0
   m_Name: NetworkManager
   m_TagString: Untagged
@@ -21038,7 +21038,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6b0fecffa3f624585964b0d0eb21b18e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Mirror.Transports::kcp2k.KcpTransport
-  port: 7777
+  port: 31083
   DualMode: 1
   NoDelay: 1
   Interval: 10
@@ -21069,14 +21069,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CardClash.CardNetworkManager
   dontDestroyOnLoad: 1
   runInBackground: 1
-  headlessStartMode: 1
+  headlessStartMode: 2
   editorAutoStart: 0
   sendRate: 60
   offlineScene: 
   onlineScene: Assets/Scenes/Game Scene.unity
   offlineSceneLoadDelay: 0
   transport: {fileID: 1728180429}
-  networkAddress: localhost
+  networkAddress: 172.236.175.125
   maxConnections: 100
   disconnectInactiveConnections: 0
   disconnectInactiveTimeout: 60
