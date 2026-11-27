@@ -83,6 +83,7 @@ namespace CardClash
                 }, "Color changes to: " + chosenWildColor.ToString());
 
                 AudioManager.Instance.PlaySoundEffect("color_changed");
+                VibrationUtility.Vibrate(milliseconds: 250, amplitude: 255);
             }
 
             _controller.TurnManager.StopTurnTimer();

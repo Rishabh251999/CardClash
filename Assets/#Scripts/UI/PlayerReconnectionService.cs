@@ -12,7 +12,7 @@ namespace CardClash
         private readonly MonoBehaviour _coroutineRunner;
         private readonly Action _sendRoomList;
 
-        private const float RoomReconnectGraceSeconds = 30f;
+        private const float RoomReconnectGraceSeconds = 60f;
 
         public PlayerReconnectionService(ServerRoomRepository repo, MonoBehaviour coroutineRunner, Action sendRoomList)
         {
@@ -151,7 +151,7 @@ namespace CardClash
                 _repo.OpenRooms[roomCode] = roomInfo;
             }
 
-            PlayerRoomInfo[] allInfo = connections.Select(c => _repo.PlayerInfos[c]).ToArray();
+            var allInfo = connections.Select(c => _repo.PlayerInfos[c]).ToArray();
 
             conn.Send(new ClientRoomMessage
             {

@@ -273,10 +273,11 @@ namespace CardClash
                 return;
             }
 
-            if (!_controller.Deck.TryDraw(out GameCard drawnCard))
-            {
+            if (_playersWhoDrewThisTurn.Contains(netId))
                 return;
-            }
+
+            if (!_controller.Deck.TryDraw(out GameCard drawnCard))
+                return;
 
             _controller.PlayerManager.Registry.AddCardsToHand(netId, new[] { drawnCard });
 

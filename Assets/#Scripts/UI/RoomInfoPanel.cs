@@ -40,10 +40,6 @@ namespace CardClash
 
         [Space(2.5f)]
 
-        [SerializeField] private TextMeshProUGUI _houseRulesStatusText;
-
-        [Space(2.5f)]
-
         [SerializeField] private Button _backButton;
         [SerializeField] private Button _createButton;
         [SerializeField] private Button _houseRulesButton;
